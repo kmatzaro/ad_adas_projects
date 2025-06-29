@@ -4,7 +4,6 @@ import sys, glob, os
 import cv2
 from threading import Thread
 from simple_lane_detection import SimpleLaneDetector
-import time 
 import random
 
 try:
