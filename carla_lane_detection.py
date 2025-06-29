@@ -19,9 +19,18 @@ import carla
 
 
 class CarlaLaneDetection:
-    def __init__(self):
+    def __init__(self, enable_recording = False):
         self.actors = []
-        self.lane_detector = SimpleLaneDetector((1920, 1080))
+        self.lane_detector = SimpleLaneDetector((1080, 720))
+        self.enable_recording = enable_recording
+        self.video_out = None
+        if self.enable_recording:
+            self.init_video_writer()
+
+    def init_video_writer(self):
+        # Initialize video writer here in the app
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        self.video_out = cv2.VideoWriter('lane_detection.mp4', fourcc, 30.0, self.lane_detector.img_size)
 
     def run(self):
         pygame.init()
@@ -34,8 +43,8 @@ class CarlaLaneDetection:
         blueprint_library = world.get_blueprint_library()
 
         camera_bp = blueprint_library.find('sensor.camera.rgb')
-        camera_bp.set_attribute('image_size_x', '1920')
-        camera_bp.set_attribute('image_size_y', '1080')
+        camera_bp.set_attribute('image_size_x', '1080')
+        camera_bp.set_attribute('image_size_y', '720')
         camera_bp.set_attribute('fov', '105')
 
         spawn_points = world.get_map().get_spawn_points()
@@ -56,6 +65,10 @@ class CarlaLaneDetection:
             result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
             surface = pygame.surfarray.make_surface(np.rot90(result))
             display.blit(surface, (0, 0))
+
+            if self.enable_recording and self.video_out is not None:
+                bgr_frame = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+                self.video_out.write(bgr_frame)
 
             # Create debug miniatures
             def draw_debug(title, img, x_offset):
@@ -84,7 +97,8 @@ class CarlaLaneDetection:
                     if event.type == pygame.QUIT:
                         raise KeyboardInterrupt
                 world.tick()
-                time.sleep(0.05)
+                clock = pygame.time.Clock()
+                clock.tick(30) # 30fps max 
         except KeyboardInterrupt:
             print("Stopping...")
         finally:
@@ -93,6 +107,8 @@ class CarlaLaneDetection:
                     actor.destroy()
             pygame.quit()
             cv2.destroyAllWindows()
+            if self.video_out:
+                self.video_out.release()
 
 
 if __name__ == '__main__':

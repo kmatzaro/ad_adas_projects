@@ -1,4 +1,5 @@
 *.pt
 *_data
+*.mp4
 
 __pycache__
