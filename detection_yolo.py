@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 from pathlib import Path
 import csv
-import carla.PythonAPI.my_projects.perception_autonomous_driving.camera_image_sensor as camera_image_sensor
+import camera_image_sensor
 
 # Load YOLO model
 model = YOLO("yolov8l.pt")

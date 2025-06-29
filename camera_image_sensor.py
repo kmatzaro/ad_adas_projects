@@ -4,8 +4,6 @@ import os
 import shutil
 import glob
 import random
-import queue
-import detection_yolo as dyolo
 
 try:
     sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (

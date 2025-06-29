@@ -18,13 +18,13 @@ class SimpleLaneDetector:
             else:
                 right_fit.append((slope, intercept))
 
-        if not left_fit or not right_fit:
-            return []
-
         left_avg = np.average(left_fit, axis=0)
         right_avg = np.average(right_fit, axis=0)
 
-        return [self.make_coordinates(frame, left_avg), self.make_coordinates(frame, right_avg)]
+        left_coords = self.make_coordinates(frame, left_avg)
+        right_coords = self.make_coordinates(frame, right_avg)
+
+        return [left_coords, right_coords]
 
     def make_coordinates(self, frame, line_params):
         slope, intercept = line_params
@@ -53,8 +53,8 @@ class SimpleLaneDetector:
         lines = cv2.HoughLinesP(masked, 2, np.pi / 180, threshold=50,
                                 minLineLength=40, maxLineGap=5)
         if lines is not None:
-            averaged_lines = self.average_slope_intercept(frame, lines)
-            for line in averaged_lines:
+            fitted_lines = self.average_slope_intercept(frame, lines)
+            for line in fitted_lines:
                 x1, y1, x2, y2 = line
                 cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 5)
 

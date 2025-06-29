@@ -21,11 +21,11 @@ import carla
 class CarlaLaneDetection:
     def __init__(self):
         self.actors = []
-        self.lane_detector = SimpleLaneDetector((1080, 720))
+        self.lane_detector = SimpleLaneDetector((1920, 1080))
 
     def run(self):
         pygame.init()
-        display = pygame.display.set_mode((1080, 720))
+        display = pygame.display.set_mode(self.lane_detector.img_size)
         pygame.display.set_caption("CARLA Lane Detection")
 
         client = carla.Client("localhost", 2000)
@@ -44,7 +44,7 @@ class CarlaLaneDetection:
         vehicle.set_autopilot(True)
         self.actors.append(vehicle)
 
-        camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
+        camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4), carla.Rotation(pitch=-15))
         camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
         self.actors.append(camera)
 
@@ -61,9 +61,9 @@ class CarlaLaneDetection:
             def draw_debug(title, img, x_offset):
                 debug_img = cv2.resize(img, (160, 120))
                 debug_surface = pygame.surfarray.make_surface(np.rot90(cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)))
-                display.blit(debug_surface, (920, x_offset))
-                text = pygame.font.SysFont(pygame.font.get_default_font(), 14).render(title, True, (255, 255, 255))
-                display.blit(text, (920, x_offset + 120))
+                display.blit(debug_surface, (self.lane_detector.img_size[0]-200, x_offset))
+                text = pygame.font.SysFont(pygame.font.get_default_font(), 16).render(title, True, (255, 255, 255))
+                display.blit(text, (self.lane_detector.img_size[0]-200, x_offset + 120))
 
             draw_debug("Gray", gray, 20)
             draw_debug("Edges", edges, 160)
