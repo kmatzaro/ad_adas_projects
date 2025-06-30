@@ -73,6 +73,8 @@ python carla_lane_detection.py
 
 ```bash
 ├── carla_lane_detection.py       # Main app
+├── camera_image_sensor.py        # This script captures frames from a drive storing them fo future processes
+├── detection_yolo.py             # We perform inference on the image data from carla using YOLO
 ├── simple_lane_detection.py      # Classical CV lane detector
 ├── requirements.txt
 ├── demo/
