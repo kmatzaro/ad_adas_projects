@@ -5,6 +5,7 @@ import cv2
 from threading import Thread
 from simple_lane_detection import SimpleLaneDetector
 import random
+import datetime
 
 try:
     sys.path.append(glob.glob('../carla/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
@@ -28,8 +29,10 @@ class CarlaLaneDetection:
 
     def init_video_writer(self):
         # Initialize video writer here in the app
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_name = f"lane_detection_{timestamp}.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        self.video_out = cv2.VideoWriter('lane_detection.mp4', fourcc, 30.0, self.lane_detector.img_size)
+        self.video_out = cv2.VideoWriter(output_name, fourcc, 30.0, self.lane_detector.img_size)
 
     def run(self):
         pygame.init()
@@ -40,6 +43,12 @@ class CarlaLaneDetection:
         client.set_timeout(10.0)
         world = client.load_world('Town03')
         blueprint_library = world.get_blueprint_library()
+
+        settings = world.get_settings()
+        if not settings.synchronous_mode:
+            settings.synchronous_mode = True
+            settings.fixed_delta_seconds = 1.0 / 30  # for 30 FPS
+            world.apply_settings(settings)
 
         camera_bp = blueprint_library.find('sensor.camera.rgb')
         camera_bp.set_attribute('image_size_x', '1080')
@@ -111,5 +120,5 @@ class CarlaLaneDetection:
 
 
 if __name__ == '__main__':
-    carla_lane_detection = CarlaLaneDetection()
+    carla_lane_detection = CarlaLaneDetection(enable_recording = False)
     carla_lane_detection.run()

@@ -14,7 +14,7 @@ class SimpleLaneDetector:
             line_parameters = np.polyfit([x1, x2], [y1, y2], 1)
             slope, intercept = line_parameters
             if abs(slope) < 0.3:
-                pass
+                continue
             if slope < 0:
                 left_fit.append((slope, intercept))
             else:
@@ -23,16 +23,8 @@ class SimpleLaneDetector:
         left_avg = np.average(left_fit, axis=0)
         right_avg = np.average(right_fit, axis=0)
         
-        if left_avg.all():
-            left_coords = self.make_coordinates(frame, left_avg)
-        else:
-            left_coords = []
-        
-        if right_avg.all():
-            right_coords = self.make_coordinates(frame, right_avg)
-        else:
-            right_coords = []
-        
+        left_coords = self.make_coordinates(frame, left_avg) if len(left_fit) > 0 else None
+        right_coords = self.make_coordinates(frame, right_avg) if len(right_fit) > 0 else None
         return [left_coords, right_coords]
 
     def make_coordinates(self, frame, line_params):
@@ -59,7 +51,7 @@ class SimpleLaneDetector:
             (0, height),
             (width, height),
             (int(width * 0.6), int(height * 0.55)),
-            (int(width * 0.6), int(height * 0.55))
+            (int(width * 0.6), int(height * 0.45))
         ]], np.int32)
         mask = cv2.fillPoly(mask, polygon, 255)
         masked = cv2.bitwise_and(edges, mask)
@@ -69,13 +61,13 @@ class SimpleLaneDetector:
 
         if lines is not None:
             left_fitted_lines, right_fitted_lines = self.average_slope_intercept(frame, lines)
-            if left_fitted_lines.all() != 0:
+            if left_fitted_lines is not None:
                 x1, y1, x2, y2 = left_fitted_lines
                 try:
                     cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 5)
                 except OverflowError:
                     pass
-            if right_fitted_lines.all() != 0:
+            if right_fitted_lines is not None:
                 x1, y1, x2, y2 = right_fitted_lines
                 try:
                     cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 5)
