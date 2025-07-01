@@ -1,37 +1,46 @@
-# Lane Detection in CARLA Simulator
+# Carla Lane Detection Project
 
-> Real-time lane detection using classical computer vision techniques on synthetic driving scenes from the CARLA simulator. Features optional recording, debug overlays, and modular design for future upgrades like BEV transforms or deep learning.
+> A real-time lane detection demo in the CARLA simulator, using classical CV methods enhanced with temporal smoothing and lane-area visualization.
 
 ---
 
 ## 🚀 Features
 
-- 🎮 CARLA simulator integration with real-time lane detection
-- 🧠 Classical CV: Gaussian blur, Canny edges, Hough lines, slope fitting
-- 🧾 Optional video recording with timestamped filenames
-- 🖼️ Debug visualizations (gray, edges, ROI mask) inside Pygame window
-- 🧩 Modular design: easy to swap in AI models or BEV transforms later
+* 🎮 **CARLA Integration**: Runs in synchronous mode (1/30s fixed timestep) with Traffic Manager autopilot.
+* 🧠 **Robust Lane Detection**:
+
+  * **Adaptive ROI** trapezoid mask tuned for road perspective.
+  * **Slope filtering**: ignores near-horizontal and extreme-angle lines.
+  * **Temporal smoothing**: exponential moving average to reduce jitter.
+  * **Lane-area fill**: semi-transparent polygon between left and right lanes.
+* 🖼️ **Debug Overlays**: live thumbnails of gray, edge, and masked images in the Pygame window.
+* 📹 **Optional Recording**: Timestamped MP4 output of the main view.
+* 🕹️ **Controls**:
+
+  * **ESC** to quit.
+  * **SPACE** to toggle autopilot on/off.
+  * **W/S/A/D** for manual control when autopilot is disabled.
 
 ---
 
 ## 📸 Demo
 
-![Demo](demo/lane_detection_demo.gif)
+![Lane Detection Demo](demo/lane_detection_demo.gif)
 
 ---
 
 ## 🛠️ Installation
 
 ```bash
-# Clone repo
+# Clone the repo
 git clone https://github.com/yourusername/carla-lane-detection.git
 cd carla-lane-detection
 
-# Create a virtual environment (optional but recommended)
+# (Optional) Create and activate a virtual environment
 python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Install Python dependencies
+# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -39,37 +48,35 @@ pip install -r requirements.txt
 
 ## 🔧 Requirements
 
-- Python 3.8+
-- CARLA Simulator (tested on 0.9.15)
-- OpenCV
-- Pygame
-- NumPy
+* Python 3.8+
+* CARLA Simulator (tested on v0.9.15)
+* OpenCV (`opencv-python`)
+* Pygame
+* NumPy
 
-Automatically generated via:
-```bash
-pip freeze > requirements.txt
-```
+> Note: CARLA must be running (Unreal engine) before launching the script.
 
 ---
 
-## 🧪 How to Run
+## 🏃‍♂️ Usage
 
-Make sure CARLA is running in a separate terminal:
-```bash
-./CarlaUE4.sh  # or CarlaUE4.exe on Windows
-```
+1. **Start CARLA** (in a separate terminal):
 
-Then start your app:
-```bash
-python carla_lane_detection.py
-```
+   ```bash
+   ./CarlaUE4.sh  # or CarlaUE4.exe on Windows
+   ```
+2. **Run the demo**:
 
-**Optional flags:**
-- `enable_recording = True` in code → saves a timestamped `.mp4`
+   ```bash
+   python carla_lane_detection.py
+   ```
+3. **Options**:
+
+   * Enable recording by passing `enable_recording=True` in the script or modifying the `__main__` call.
 
 ---
 
-## 📂 Project Structure
+## 🔍 Code Structure
 
 ```bash
 ├── carla_lane_detection.py       # Main app
@@ -84,29 +91,47 @@ python carla_lane_detection.py
 
 ---
 
-## 🧱 Lane Detection Stages
+## 🧱 Algorithm Steps
 
-1. Convert to grayscale
-2. Apply Gaussian blur
-3. Detect edges with Canny
-4. Filter region of interest
-5. Fit left/right lane lines using Hough transform
-6. Overlay fitted lines on RGB frame
+1. **Preprocessing**:
+
+   * Resize to 1080×720
+   * Gaussian blur + Canny edge detection
+2. **Region of Interest (ROI)**:
+
+   * Trapezoid mask to focus on the road
+3. **Line Detection**:
+
+   * Hough transform to extract line segments
+   * Filter by slope range (0.3–3.0) and side of image for left/right lanes
+4. **Line Fitting & Smoothing**:
+
+   * Average slope/intercept of segments
+   * EMA smoothing across frames
+5. **Visualization**:
+
+   * Draw lane lines and fill lane area with semi-transparent polygon
+   * Debug thumbnails for gray, edges, masked
+6. **CARLA Integration**:
+
+   * Synchronous stepping with `world.tick()`
+   * Traffic Manager autopilot at 30 FPS
+   * Pygame display + input controls
 
 ---
 
-## 🔄 Future Plans
+## 🔄 Future Work
 
-- [ ] Add bird’s eye view (BEV) and polynomial fits
-- [ ] Use AI models like YOLO or SCNN for lane detection
-- [ ] Validate against CARLA’s map/ground truth lanes
-- [ ] Add lane curvature + driving logic
+* Integrate **bird’s-eye-view** and sliding-window search for lane detection.
+* Replace classical CV with **deep learning** (e.g., SCNN, YOLOv8-seg).
+* Compare against CARLA’s **ground-truth lane topology** for quantitative evaluation.
+* Add **curvature** and **vehicle offset** metrics on-screen.
 
 ---
 
 ## 📜 License
 
-MIT License
+This project is licensed under the MIT License.
 
 ---
 

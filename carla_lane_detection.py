@@ -19,106 +19,262 @@ import carla
 
 
 class CarlaLaneDetection:
-    def __init__(self, enable_recording = False):
+    def __init__(self, enable_recording=False, town = 'Town03'):
+        self.client = None
+        self.world = None
+        self.town = town
+        self.camera = None
+        self.vehicle = None
+        self.running = False
         self.actors = []
         self.lane_detector = SimpleLaneDetector((1080, 720))
         self.enable_recording = enable_recording
         self.video_out = None
+        self.current_frame = None  # Store current frame for main thread
+        
         if self.enable_recording:
             self.init_video_writer()
+        
+        # Display settings
+        pygame.init()
+        self.display = pygame.display.set_mode(self.lane_detector.img_size)
+        pygame.display.set_caption("CARLA Lane Detection")
 
     def init_video_writer(self):
-        # Initialize video writer here in the app
+        """Initialize video writer"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         output_name = f"lane_detection_{timestamp}.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.video_out = cv2.VideoWriter(output_name, fourcc, 30.0, self.lane_detector.img_size)
 
-    def run(self):
-        pygame.init()
-        display = pygame.display.set_mode(self.lane_detector.img_size)
-        pygame.display.set_caption("CARLA Lane Detection")
+    def carla_setup(self):
+        """Initialize CARLA connection and spawn vehicle"""
+        try:
+            # Connect to CARLA server
+            self.client = carla.Client("localhost", 2000)
+            self.client.set_timeout(10.0)
+            self.world = self.client.load_world(self.town)
+            blueprint_library = self.world.get_blueprint_library()
 
-        client = carla.Client("localhost", 2000)
-        client.set_timeout(10.0)
-        world = client.load_world('Town03')
-        blueprint_library = world.get_blueprint_library()
-
-        settings = world.get_settings()
-        if not settings.synchronous_mode:
+            # Configure synchronous mode
+            settings = self.world.get_settings()
             settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 1.0 / 30  # for 30 FPS
-            world.apply_settings(settings)
+            settings.fixed_delta_seconds = 0.05  # 20 FPS
+            self.world.apply_settings(settings)
 
-        camera_bp = blueprint_library.find('sensor.camera.rgb')
-        camera_bp.set_attribute('image_size_x', '1080')
-        camera_bp.set_attribute('image_size_y', '720')
-        camera_bp.set_attribute('fov', '105')
+            # Set traffic manager to synchronous mode
+            traffic_manager = self.client.get_trafficmanager()
+            traffic_manager.set_synchronous_mode(True)
+            print("Synchronous mode enabled at 20 FPS")
 
-        spawn_points = world.get_map().get_spawn_points()
-        vehicle_bp = blueprint_library.filter('vehicle.tesla.model3')[0]
-        vehicle = world.spawn_actor(vehicle_bp, random.choice(spawn_points))
-        vehicle.set_autopilot(True)
-        self.actors.append(vehicle)
+            # FIXED: Spawn vehicle FIRST, then camera
+            spawn_points = self.world.get_map().get_spawn_points()
+            vehicle_bp = blueprint_library.filter('vehicle.tesla.model3')[0]
+            self.vehicle = self.world.spawn_actor(vehicle_bp, random.choice(spawn_points))
+            self.vehicle.set_autopilot(True)
+            self.actors.append(self.vehicle)
 
-        camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4), carla.Rotation(pitch=-15))
-        camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
-        self.actors.append(camera)
+            # Setup camera AFTER vehicle is spawned
+            camera_bp = blueprint_library.find('sensor.camera.rgb')
+            camera_bp.set_attribute('image_size_x', '1920')
+            camera_bp.set_attribute('image_size_y', '1080')
+            camera_bp.set_attribute('fov', '105')
+            
+            # Attach camera to vehicle
+            camera_transform = carla.Transform(
+                carla.Location(x=2.0, z=1.4),  # Position on vehicle
+                carla.Rotation(pitch=-15)       # Slight downward angle
+            )
 
-        def camera_callback(image):
+            self.camera = self.world.spawn_actor(
+                camera_bp, 
+                camera_transform, 
+                attach_to=self.vehicle  # Now vehicle exists
+            )
+            self.actors.append(self.camera)
+
+            # FIXED: Set up camera callback properly (no separate thread needed)
+            self.camera.listen(lambda image: self.camera_callback(image))
+
+            print("CARLA setup complete!")
+            return True
+            
+        except Exception as e:
+            print(f"Error setting up CARLA: {e}")
+            return False
+
+    def camera_callback(self, image):
+        """Process camera images (called from CARLA's thread)"""
+        try:
+            # Convert CARLA image to numpy array
             array = np.frombuffer(image.raw_data, dtype=np.uint8)
             array = array.reshape((image.height, image.width, 4))
-            frame = array[:, :, :3]
+            frame = array[:, :, :3]  # Remove alpha channel
+            
+            # CARLA images are in BGRA format, convert to RGB
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Process with lane detector
             result, gray, edges, masked = self.lane_detector.process_image(frame)
-            result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
-            surface = pygame.surfarray.make_surface(np.rot90(result))
-            display.blit(surface, (0, 0))
+            
+            # Store processed frame for main thread to display
+            self.current_frame = {
+                'result': result,
+                'gray': gray,
+                'edges': edges,
+                'masked': masked
+            }
+            
+        except Exception as e:
+            print(f"Error in camera callback: {e}")
 
+    def update_display(self):
+        """Update pygame display with current frame"""
+        if self.current_frame is None:
+            return
+            
+        try:
+            result = self.current_frame['result']
+            gray = self.current_frame['gray']
+            edges = self.current_frame['edges']
+            masked = self.current_frame['masked']
+            
+            # Result is already in RGB format from lane detector
+            surface = pygame.surfarray.make_surface(np.rot90(result))
+            self.display.blit(surface, (0, 0))
+
+            # Record video if enabled (convert back to BGR for OpenCV)
             if self.enable_recording and self.video_out is not None:
                 bgr_frame = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
                 self.video_out.write(bgr_frame)
 
             # Create debug miniatures
-            def draw_debug(title, img, x_offset):
+            def draw_debug(title, img, y_offset):
                 debug_img = cv2.resize(img, (160, 120))
-                debug_surface = pygame.surfarray.make_surface(np.rot90(cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)))
-                display.blit(debug_surface, (self.lane_detector.img_size[0]-200, x_offset))
-                text = pygame.font.SysFont(pygame.font.get_default_font(), 16).render(title, True, (255, 255, 255))
-                display.blit(text, (self.lane_detector.img_size[0]-200, x_offset + 120))
+                if len(debug_img.shape) == 2:  # Grayscale
+                    debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)
+                debug_surface = pygame.surfarray.make_surface(np.rot90(debug_img))
+                self.display.blit(debug_surface, (self.lane_detector.img_size[0]-200, y_offset))
+                
+                # Add text label
+                font = pygame.font.SysFont(pygame.font.get_default_font(), 16)
+                text = font.render(title, True, (255, 255, 255))
+                self.display.blit(text, (self.lane_detector.img_size[0]-200, y_offset + 120))
 
             draw_debug("Gray", gray, 20)
             draw_debug("Edges", edges, 160)
             draw_debug("Masked", masked, 300)
 
-            pygame.display.update()
+            pygame.display.flip()  # Use flip() instead of update() for better performance
+            
+        except Exception as e:
+            print(f"Error updating display: {e}")
 
+    def run(self):
+        """Main execution loop with synchronous mode"""
+        if not self.carla_setup():
+            print("Failed to setup CARLA")
+            return
         
-        # Start image processing in separate thread
-        processing_thread = Thread(target=camera_callback)
-        processing_thread.start()
-
-        camera.listen(lambda image: camera_callback(image))
-
+        self.running = True
+        
+        # Enable autopilot
+        self.vehicle.set_autopilot(True)
+        print("Autopilot enabled! Vehicle will drive automatically.")
+        print("Press ESC to quit, SPACE to toggle autopilot on/off")
+        print("Controls: W/S = throttle/brake, A/D = steer (when autopilot off)")
+        print("Running in synchronous mode at 20 FPS")
+        
+        autopilot_enabled = True
+        clock = pygame.time.Clock()  # Add clock for consistent timing
+        
         try:
-            while True:
+            # Main synchronous loop
+            while self.running:
+                # Tick the world to advance simulation
+                self.world.tick()
+                
+                # Handle pygame events
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        raise KeyboardInterrupt
-                world.tick()
-                clock = pygame.time.Clock()
-                clock.tick(30) # 30fps max 
+                        self.running = False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            self.running = False
+                        elif event.key == pygame.K_SPACE:
+                            # Toggle autopilot
+                            autopilot_enabled = not autopilot_enabled
+                            self.vehicle.set_autopilot(autopilot_enabled)
+                            status = "enabled" if autopilot_enabled else "disabled"
+                            print(f"Autopilot {status}")
+                
+                # Manual control when autopilot is disabled
+                if not autopilot_enabled:
+                    keys = pygame.key.get_pressed()
+                    throttle = 0.0
+                    brake = 0.0
+                    steer = 0.0
+                    
+                    if keys[pygame.K_w]:
+                        throttle = 0.6
+                    if keys[pygame.K_s]:
+                        brake = 0.6
+                    if keys[pygame.K_a]:
+                        steer = 0.3
+                    if keys[pygame.K_d]:
+                        steer = -0.3
+                    
+                    control = carla.VehicleControl(
+                        throttle=throttle,
+                        brake=brake,
+                        steer=steer
+                    )
+                    self.vehicle.apply_control(control)
+                
+                # Update display
+                self.update_display()
+                
+                # Maintain consistent frame rate
+                clock.tick(20)  # 20 FPS to match CARLA simulation
+                
         except KeyboardInterrupt:
-            print("Stopping...")
+            print("Interrupted by user")
         finally:
-            for actor in self.actors:
-                if actor.is_alive:
+            self.cleanup()
+    
+    def cleanup(self):
+        """Clean up CARLA actors and connections"""
+        print("Starting cleanup...")
+        self.running = False
+        
+        if self.vehicle:
+            self.vehicle.set_autopilot(False)  # Disable autopilot before cleanup
+        
+        # Clean up actors in reverse order
+        for actor in reversed(self.actors):
+            if actor is not None:
+                try:
                     actor.destroy()
-            pygame.quit()
-            cv2.destroyAllWindows()
-            if self.video_out:
-                self.video_out.release()
+                except:
+                    pass
+        
+        if self.video_out:
+            self.video_out.release()
+        
+        # Restore asynchronous mode
+        if self.world:
+            try:
+                settings = self.world.get_settings()
+                settings.synchronous_mode = False
+                settings.fixed_delta_seconds = None
+                self.world.apply_settings(settings)
+            except:
+                pass
+                
+        pygame.quit()
+        print("Cleanup complete - restored asynchronous mode")
 
 
 if __name__ == '__main__':
-    carla_lane_detection = CarlaLaneDetection(enable_recording = False)
+    carla_lane_detection = CarlaLaneDetection(enable_recording=False, town='Town05')
     carla_lane_detection.run()
