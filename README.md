@@ -95,7 +95,6 @@ pip install -r requirements.txt
 
 1. **Preprocessing**:
 
-   * Resize to 1080×720
    * Gaussian blur + Canny edge detection
 2. **Region of Interest (ROI)**:
 
