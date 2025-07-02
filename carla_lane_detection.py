@@ -27,7 +27,7 @@ class CarlaLaneDetection:
         self.vehicle = None
         self.running = False
         self.actors = []
-        self.lane_detector = SimpleLaneDetector((1080, 720))
+        self.lane_detector = SimpleLaneDetector((1280, 720))
         self.enable_recording = enable_recording
         self.video_out = None
         self.current_frame = None  # Store current frame for main thread
@@ -59,13 +59,13 @@ class CarlaLaneDetection:
             # Configure synchronous mode
             settings = self.world.get_settings()
             settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 0.05  # 20 FPS
+            settings.fixed_delta_seconds = 1.0 / 30  # denominator is the number of fps to run
             self.world.apply_settings(settings)
 
             # Set traffic manager to synchronous mode
             traffic_manager = self.client.get_trafficmanager()
             traffic_manager.set_synchronous_mode(True)
-            print("Synchronous mode enabled at 20 FPS")
+            print("Synchronous mode enabled at 50 FPS")
 
             # FIXED: Spawn vehicle FIRST, then camera
             spawn_points = self.world.get_map().get_spawn_points()
@@ -76,20 +76,20 @@ class CarlaLaneDetection:
 
             # Setup camera AFTER vehicle is spawned
             camera_bp = blueprint_library.find('sensor.camera.rgb')
-            camera_bp.set_attribute('image_size_x', '1920')
-            camera_bp.set_attribute('image_size_y', '1080')
-            camera_bp.set_attribute('fov', '105')
+            camera_bp.set_attribute('image_size_x', '1280')
+            camera_bp.set_attribute('image_size_y', '720')
+            camera_bp.set_attribute('fov', '90')
             
             # Attach camera to vehicle
             camera_transform = carla.Transform(
-                carla.Location(x=2.0, z=1.4),  # Position on vehicle
-                carla.Rotation(pitch=-15)       # Slight downward angle
+                carla.Location(x=2.0, z=1.3),  # Position on vehicle
+                carla.Rotation(pitch=-8)      # Slight downward angle
             )
 
             self.camera = self.world.spawn_actor(
                 camera_bp, 
                 camera_transform, 
-                attach_to=self.vehicle  # Now vehicle exists
+                attach_to=self.vehicle
             )
             self.actors.append(self.camera)
 
@@ -110,7 +110,7 @@ class CarlaLaneDetection:
             array = np.frombuffer(image.raw_data, dtype=np.uint8)
             array = array.reshape((image.height, image.width, 4))
             frame = array[:, :, :3]  # Remove alpha channel
-            
+                        
             # CARLA images are in BGRA format, convert to RGB
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
@@ -183,7 +183,7 @@ class CarlaLaneDetection:
         print("Autopilot enabled! Vehicle will drive automatically.")
         print("Press ESC to quit, SPACE to toggle autopilot on/off")
         print("Controls: W/S = throttle/brake, A/D = steer (when autopilot off)")
-        print("Running in synchronous mode at 20 FPS")
+        print(f"Running in synchronous mode at {1.0/self.world.get_settings().fixed_delta_seconds} FPS")
         
         autopilot_enabled = True
         clock = pygame.time.Clock()  # Add clock for consistent timing
@@ -216,9 +216,9 @@ class CarlaLaneDetection:
                     steer = 0.0
                     
                     if keys[pygame.K_w]:
-                        throttle = 0.6
+                        throttle = 1
                     if keys[pygame.K_s]:
-                        brake = 0.6
+                        brake = 1
                     if keys[pygame.K_a]:
                         steer = 0.3
                     if keys[pygame.K_d]:
@@ -251,7 +251,7 @@ class CarlaLaneDetection:
             self.vehicle.set_autopilot(False)  # Disable autopilot before cleanup
         
         # Clean up actors in reverse order
-        for actor in reversed(self.actors):
+        for actor in self.actors:
             if actor is not None:
                 try:
                     actor.destroy()
@@ -276,5 +276,5 @@ class CarlaLaneDetection:
 
 
 if __name__ == '__main__':
-    carla_lane_detection = CarlaLaneDetection(enable_recording=False, town='Town05')
+    carla_lane_detection = CarlaLaneDetection(enable_recording=True, town='Town05')
     carla_lane_detection.run()

@@ -1,12 +1,15 @@
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
 
 class SimpleLaneDetector:
     def __init__(self, image_size):
         self.img_size = image_size
         self.prev_left_coords = None
         self.prev_right_coords = None
-        self.smoothing_factor = 0.9  # For temporal smoothing
+        self.missing_left = 0
+        self.missing_right = 0
+        self.smoothing_factor = 0.7  # For temporal smoothing
 
     def average_slope_intercept(self, frame, lines):
         left_fit = []
@@ -59,7 +62,7 @@ class SimpleLaneDetector:
             
             # Define y coordinates
             y1 = height              # Bottom of image
-            y2 = int(height * 0.6)   # 70% up from bottom
+            y2 = int(height * 0.6)   # 60% up from bottom
             
             # Calculate x coordinates
             x1 = int((y1 - intercept) / slope)
@@ -111,15 +114,29 @@ class SimpleLaneDetector:
             mask = np.zeros_like(edges)
             
             # Improved polygon for better lane detection
-            polygon = np.array([[
-                (0, height),
-                (width, height),
-                (int(width * 0.6), int(height * 0.55)),
-                (int(width * 0.6), int(height * 0.45))
+            left_polygon = np.array([[
+                (0, height),                            # Bottom left of the image
+                (0, int(height * 0.8)),                 # Bottom left and a bit up
+                (int(width * 0.4), int(height * 0.6)),  # Almost middle of the screen
+                (int(width * 0.5), int(height * 0.6)),  
+                (int(width * 0.2), height)              # Bottom left and a bit to the right
             ]], np.int32)
-            
-            cv2.fillPoly(mask, polygon, 255)
+
+            right_polygon = np.array([[
+                (width, height),                        # Bottom right
+                (width, int(height * 0.8)),             # Bottom right and a bit up
+                (int(width * 0.6), int(height * 0.6)),  # Almost middle of screen
+                (int(width * 0.5), int(height * 0.6)),
+                (int(width * 0.8), height)              # Bottom right and a bit to the left
+            ]], np.int32)
+
+            cv2.fillPoly(mask, left_polygon, 255)
+            cv2.fillPoly(mask, right_polygon, 255)
             masked = cv2.bitwise_and(edges, mask)
+
+            # Uncomment to freeze carla and see the polygon mask
+            # plt.imshow(mask)
+            # plt.show()
 
             # Hough line detection with optimized parameters
             lines = cv2.HoughLinesP(
@@ -140,10 +157,24 @@ class SimpleLaneDetector:
                 # Apply temporal smoothing
                 left_coords = self.smooth_lines(left_coords, self.prev_left_coords)
                 right_coords = self.smooth_lines(right_coords, self.prev_right_coords)
+
+                if left_coords is None:
+                    self.missing_left += 1
+                    if self.missing_left < 30: # This number repersents the number of frames the line will be kept
+                        left_coords = self.prev_left_coords
+                else:
+                    # Update previous coordinates
+                    self.missing_left = 0
+                    self.prev_left_coords = left_coords
                 
-                # Update previous coordinates
-                self.prev_left_coords = left_coords
-                self.prev_right_coords = right_coords
+                if right_coords is None:
+                    self.missing_right += 1
+                    if self.missing_right < 30: # This number repersents the number of frames the line will be kept
+                        left_coords = self.prev_left_coords
+                else:
+                    # Update previous coordinates
+                    self.missing_right = 0
+                    self.prev_right_coords = right_coords
                 
                 # Draw lanes with different colors
                 if left_coords is not None:

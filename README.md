@@ -6,10 +6,10 @@
 
 ## 🚀 Features
 
-* 🎮 **CARLA Integration**: Runs in synchronous mode (1/30s fixed timestep) with Traffic Manager autopilot.
+* 🎮 **CARLA Integration**: Runs in synchronous mode at a fixed timestep with Traffic Manager autopilot.
 * 🧠 **Robust Lane Detection**:
 
-  * **Adaptive ROI** trapezoid mask tuned for road perspective.
+  * **Adaptive ROI** separate trapezoid masks for left/right lanes tuned for road perspective.
   * **Slope filtering**: ignores near-horizontal and extreme-angle lines.
   * **Temporal smoothing**: exponential moving average to reduce jitter.
   * **Lane-area fill**: semi-transparent polygon between left and right lanes.
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 ## 🔧 Requirements
 
-* Python 3.8+
+* Python 3.7
 * CARLA Simulator (tested on v0.9.15)
 * OpenCV (`opencv-python`)
 * Pygame
@@ -99,7 +99,7 @@ pip install -r requirements.txt
    * Gaussian blur + Canny edge detection
 2. **Region of Interest (ROI)**:
 
-   * Trapezoid mask to focus on the road
+   * Two separate trapezoid masks to focus on left and right lanes perspective
 3. **Line Detection**:
 
    * Hough transform to extract line segments
@@ -115,7 +115,7 @@ pip install -r requirements.txt
 6. **CARLA Integration**:
 
    * Synchronous stepping with `world.tick()`
-   * Traffic Manager autopilot at 30 FPS
+   * Traffic Manager autopilot at specific FPS
    * Pygame display + input controls
 
 ---
