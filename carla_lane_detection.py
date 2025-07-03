@@ -59,13 +59,13 @@ class CarlaLaneDetection:
             # Configure synchronous mode
             settings = self.world.get_settings()
             settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 1.0 / 30  # denominator is the number of fps to run
+            settings.fixed_delta_seconds = 1.0 / 20  # denominator is the number of fps to run
             self.world.apply_settings(settings)
 
             # Set traffic manager to synchronous mode
             traffic_manager = self.client.get_trafficmanager()
             traffic_manager.set_synchronous_mode(True)
-            print("Synchronous mode enabled at 50 FPS")
+            print(f"Synchronous mode enabled at {1.0/self.world.get_settings().fixed_delta_seconds} FPS")
 
             # FIXED: Spawn vehicle FIRST, then camera
             spawn_points = self.world.get_map().get_spawn_points()
@@ -276,5 +276,5 @@ class CarlaLaneDetection:
 
 
 if __name__ == '__main__':
-    carla_lane_detection = CarlaLaneDetection(enable_recording=True, town='Town05')
+    carla_lane_detection = CarlaLaneDetection(enable_recording=False, town='Town05')
     carla_lane_detection.run()

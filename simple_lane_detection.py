@@ -1,8 +1,11 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('SVG')
 
 class SimpleLaneDetector:
+    """SimpleLaneDetector class that uses classic CV techniques to obtain lane lines."""
     def __init__(self, image_size):
         self.img_size = image_size
         self.prev_left_coords = None
@@ -104,7 +107,7 @@ class SimpleLaneDetector:
                 gray = frame.copy()
                 
             # Apply Gaussian blur to reduce noise
-            blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            blur = cv2.GaussianBlur(gray, (3, 3), 0)
             
             # Edge detection with adaptive thresholds
             edges = cv2.Canny(blur, 50, 150, apertureSize=3)
@@ -117,16 +120,16 @@ class SimpleLaneDetector:
             left_polygon = np.array([[
                 (0, height),                            # Bottom left of the image
                 (0, int(height * 0.8)),                 # Bottom left and a bit up
-                (int(width * 0.4), int(height * 0.6)),  # Almost middle of the screen
-                (int(width * 0.5), int(height * 0.6)),  
+                (int(width * 0.4), int(height * 0.5)),  # Almost middle of the screen
+                (int(width * 0.5), int(height * 0.5)),  
                 (int(width * 0.2), height)              # Bottom left and a bit to the right
             ]], np.int32)
 
             right_polygon = np.array([[
                 (width, height),                        # Bottom right
                 (width, int(height * 0.8)),             # Bottom right and a bit up
-                (int(width * 0.6), int(height * 0.6)),  # Almost middle of screen
-                (int(width * 0.5), int(height * 0.6)),
+                (int(width * 0.6), int(height * 0.5)),  # Almost middle of screen
+                (int(width * 0.5), int(height * 0.5)),
                 (int(width * 0.8), height)              # Bottom right and a bit to the left
             ]], np.int32)
 
@@ -135,8 +138,8 @@ class SimpleLaneDetector:
             masked = cv2.bitwise_and(edges, mask)
 
             # Uncomment to freeze carla and see the polygon mask
-            # plt.imshow(mask)
-            # plt.show()
+            plt.imshow(mask)
+            plt.show()
 
             # Hough line detection with optimized parameters
             lines = cv2.HoughLinesP(
@@ -160,7 +163,7 @@ class SimpleLaneDetector:
 
                 if left_coords is None:
                     self.missing_left += 1
-                    if self.missing_left < 30: # This number repersents the number of frames the line will be kept
+                    if self.missing_left < 50: # This number repersents the number of frames the line will be kept
                         left_coords = self.prev_left_coords
                 else:
                     # Update previous coordinates
@@ -169,7 +172,7 @@ class SimpleLaneDetector:
                 
                 if right_coords is None:
                     self.missing_right += 1
-                    if self.missing_right < 30: # This number repersents the number of frames the line will be kept
+                    if self.missing_right < 50: # This number repersents the number of frames the line will be kept
                         left_coords = self.prev_left_coords
                 else:
                     # Update previous coordinates
