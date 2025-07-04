@@ -4,6 +4,7 @@ import sys, glob, os
 import cv2
 from threading import Thread
 from simple_lane_detection import SimpleLaneDetector
+from validation_lane_detection import LaneValidator
 import random
 import datetime
 
@@ -19,7 +20,7 @@ import carla
 
 
 class CarlaLaneDetection:
-    def __init__(self, enable_recording=False, town = 'Town03'):
+    def __init__(self, enable_recording=False, town = 'Town03', validation_mode = True):
         self.client = None
         self.world = None
         self.town = town
@@ -28,12 +29,19 @@ class CarlaLaneDetection:
         self.running = False
         self.actors = []
         self.lane_detector = SimpleLaneDetector((1280, 720))
+        self.validation_mode = validation_mode
         self.enable_recording = enable_recording
         self.video_out = None
         self.current_frame = None  # Store current frame for main thread
         
         if self.enable_recording:
             self.init_video_writer()
+        
+        if self.validation_mode:
+            self.frame_id = 0
+            self.capture_times = 0.0
+            self.logs = []
+            self.sim_time = None
         
         # Display settings
         pygame.init()
@@ -95,6 +103,10 @@ class CarlaLaneDetection:
 
             # FIXED: Set up camera callback properly (no separate thread needed)
             self.camera.listen(lambda image: self.camera_callback(image))
+
+            if self.validation_mode:
+                self.validator = LaneValidator(self.world, self.camera, self.vehicle, self.lane_detector)
+                self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
 
             print("CARLA setup complete!")
             return True
@@ -193,6 +205,12 @@ class CarlaLaneDetection:
             while self.running:
                 # Tick the world to advance simulation
                 self.world.tick()
+
+                if self.validation_mode:
+                    self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
+                    if self.sim_time > 5.0:
+                        self.frame_id, self.capture_times, self.logs = self.validator.run_validation(self.sim_time, self.current_frame, self.frame_id, self.capture_times, self.logs)
+                    
                 
                 # Handle pygame events
                 for event in pygame.event.get():
