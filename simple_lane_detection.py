@@ -138,8 +138,8 @@ class SimpleLaneDetector:
             masked = cv2.bitwise_and(edges, mask)
 
             # Uncomment to freeze carla and see the polygon mask
-            plt.imshow(mask)
-            plt.show()
+            # plt.imshow(mask)
+            # plt.show()
 
             # Hough line detection with optimized parameters
             lines = cv2.HoughLinesP(
@@ -193,6 +193,7 @@ class SimpleLaneDetector:
                 # Draw lane area if both lanes detected
                 if left_coords is not None and right_coords is not None:
                     self.draw_lane_area(lane_image, left_coords, right_coords)
+                    self.draw_center_lane(lane_image, left_coords, right_coords)
 
             return lane_image, gray, edges, masked
             
@@ -223,3 +224,18 @@ class SimpleLaneDetector:
             
         except Exception as e:
             print(f"Error drawing lane area: {e}")
+    
+    def draw_center_lane(self, frame, left_coords, right_coords, color=(0, 255, 0), thickness=3):
+        try:
+            # Create points for the lane area
+            left_x1, left_y1, left_x2, left_y2 = left_coords
+            right_x1, right_y1, right_x2, right_y2 = right_coords
+
+            mid_bottom = ((left_x1 + right_x1)//2, left_y1)
+            mid_top    = ((left_x2 + right_x2)//2, right_y2)
+            
+            overlay = frame.copy()
+            cv2.line(overlay, mid_bottom, mid_top, color, thickness)
+            cv2.addWeighted(frame, 0.8, overlay, 0.2, 0, frame)
+        except Exception as e:
+            print(f"Error drawing center line: {e}")
