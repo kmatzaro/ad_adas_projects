@@ -2,21 +2,40 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('SVG')
 
 class SimpleLaneDetector:
-    """SimpleLaneDetector class that uses classic CV techniques to obtain lane lines."""
-    def __init__(self, image_size):
+    def __init__(self, image_size, display_lane_overlay = True, display_lane_lines = True, display_center_lane_line = True):
+        """SimpleLaneDetector class that uses classic CV techniques to obtain lane lines.
+    
+        Paramters:
+            img_size                        : Size of the image to process 
+            display_lane_overlay (bool)     : Whether to display the lane overlay 
+            display_lane_lines (bool)       : Whether to display the lane lines
+            display_center_lane_line (bool) : Whether to display the projected center line
+            prev_left_coords                : Coordinates of the left detected line in the previous frame
+            prev_right_coords               : Coordinates of the right detected line in the previous frame
+            missing_left                    : Number of misses for detecting a left lane line
+            missing_right                   : Number of misses for detecting a right lane line
+            smoothing_factor                : Smoothing factor for the EMA (Exponential Moving Average)
+        """
+        
         self.img_size = image_size
+        self.display_lane_overlay = display_lane_overlay
+        self.display_lane_lines = display_lane_lines
+        self.display_center_lane_line = display_center_lane_line
         self.prev_left_coords = None
         self.prev_right_coords = None
+        self.left_coords = None
+        self.right_coords = None
         self.missing_left = 0
         self.missing_right = 0
-        self.smoothing_factor = 0.7  # For temporal smoothing
+        self.smoothing_factor = 0.9  # For temporal smoothing
 
     def average_slope_intercept(self, frame, lines):
         left_fit = []
         right_fit = []
+
+        self.left_coords, self.right_coords = None, None
 
         if lines is None:
             return [None, None]
@@ -43,21 +62,22 @@ class SimpleLaneDetector:
             elif slope > 0 and line_center_x > center_x:  # Right lane (positive slope, right side)
                 right_fit.append((slope, intercept))
 
-        # Calculate averages only if we have lines
-        left_coords = None
-        right_coords = None
         
         if len(left_fit) > 0:
             left_avg = np.average(left_fit, axis=0)
-            left_coords = self.make_coordinates(frame, left_avg)
+            self.left_coords = self.make_coordinates(frame, left_avg)
             
         if len(right_fit) > 0:
             right_avg = np.average(right_fit, axis=0)
-            right_coords = self.make_coordinates(frame, right_avg)
+            self.right_coords = self.make_coordinates(frame, right_avg)
             
-        return [left_coords, right_coords]
+        return [self.left_coords, self.right_coords]
 
     def make_coordinates(self, frame, line_params):
+        """
+        Given the frame and the fitted line parameters (slope, intercept) determine 
+        two coordinate points (x1, y1) and (x2, y2) that lie along the fitted line
+        """
         try:
             slope, intercept = line_params
             height = frame.shape[0]
@@ -107,7 +127,7 @@ class SimpleLaneDetector:
                 gray = frame.copy()
                 
             # Apply Gaussian blur to reduce noise
-            blur = cv2.GaussianBlur(gray, (3, 3), 0)
+            blur = cv2.GaussianBlur(gray, (3, 3), 5)
             
             # Edge detection with adaptive thresholds
             edges = cv2.Canny(blur, 50, 150, apertureSize=3)
@@ -119,18 +139,18 @@ class SimpleLaneDetector:
             # Improved polygon for better lane detection
             left_polygon = np.array([[
                 (0, height),                            # Bottom left of the image
-                (0, int(height * 0.8)),                 # Bottom left and a bit up
-                (int(width * 0.4), int(height * 0.5)),  # Almost middle of the screen
+                (0, int(height * 0.9)),                 # Bottom left and a bit up
+                (int(width * 0.45), int(height * 0.5)),  # Almost middle of the screen
                 (int(width * 0.5), int(height * 0.5)),  
-                (int(width * 0.2), height)              # Bottom left and a bit to the right
+                (int(width * 0.1), height)              # Bottom left and a bit to the right
             ]], np.int32)
 
             right_polygon = np.array([[
                 (width, height),                        # Bottom right
-                (width, int(height * 0.8)),             # Bottom right and a bit up
-                (int(width * 0.6), int(height * 0.5)),  # Almost middle of screen
+                (width, int(height * 0.9)),             # Bottom right and a bit up
+                (int(width * 0.55), int(height * 0.5)),  # Almost middle of screen
                 (int(width * 0.5), int(height * 0.5)),
-                (int(width * 0.8), height)              # Bottom right and a bit to the left
+                (int(width * 0.9), height)              # Bottom right and a bit to the left
             ]], np.int32)
 
             cv2.fillPoly(mask, left_polygon, 255)
@@ -153,54 +173,67 @@ class SimpleLaneDetector:
 
             # Process and draw detected lanes
             lane_image = frame.copy()
+
+            self.left_coords, self.right_coords = None, None
             
             if lines is not None and len(lines) > 0:
-                left_coords, right_coords = self.average_slope_intercept(frame, lines)
+                self.left_coords, self.right_coords = self.average_slope_intercept(frame, lines)
                 
                 # Apply temporal smoothing
-                left_coords = self.smooth_lines(left_coords, self.prev_left_coords)
-                right_coords = self.smooth_lines(right_coords, self.prev_right_coords)
+                self.left_coords = self.smooth_lines(self.left_coords, self.prev_left_coords)
+                self.right_coords = self.smooth_lines(self.right_coords, self.prev_right_coords)
 
-                if left_coords is None:
+                if self.left_coords is None:
                     self.missing_left += 1
-                    if self.missing_left < 50: # This number repersents the number of frames the line will be kept
-                        left_coords = self.prev_left_coords
+                    if self.missing_left < 20:
+                        self.left_coords = self.prev_left_coords
+                    else:
+                        # after 50 bad frames, clear everything
+                        self.prev_left_coords = None
+                        self.left_coords      = None
                 else:
-                    # Update previous coordinates
-                    self.missing_left = 0
-                    self.prev_left_coords = left_coords
+                    self.missing_left      = 0
+                    self.prev_left_coords  = self.left_coords
                 
-                if right_coords is None:
+                if self.right_coords is None:
                     self.missing_right += 1
-                    if self.missing_right < 50: # This number repersents the number of frames the line will be kept
-                        left_coords = self.prev_left_coords
+                    if self.missing_right < 20: # This number repersents the number of frames the line will be kept
+                        self.right_coords = self.prev_right_coords
+                    else:
+                        # after 50 bad frames, clear everything
+                        self.prev_right_coords = None
+                        self.right_coords      = None
                 else:
                     # Update previous coordinates
                     self.missing_right = 0
-                    self.prev_right_coords = right_coords
+                    self.prev_right_coords = self.right_coords
                 
-                # Draw lanes with different colors
-                if left_coords is not None:
-                    x1, y1, x2, y2 = left_coords
-                    cv2.line(lane_image, (x1, y1), (x2, y2), (0, 255, 0), 5)  # Green
-                    cv2.line(lane_image, (x1, y1), (x2, y2), (0, 200, 0), 4)  # Darker green outline
-                    
-                if right_coords is not None:
-                    x1, y1, x2, y2 = right_coords
-                    cv2.line(lane_image, (x1, y1), (x2, y2), (0, 255, 0), 5)  # Green
-                    cv2.line(lane_image, (x1, y1), (x2, y2), (0, 200, 0), 4)  # Darker green outline
-                
-                # Draw lane area if both lanes detected
-                if left_coords is not None and right_coords is not None:
-                    self.draw_lane_area(lane_image, left_coords, right_coords)
-                    self.draw_center_lane(lane_image, left_coords, right_coords)
+                # Draw lane area/line/center lane line
+                if self.display_lane_lines:
+                    self.draw_lane_lines(lane_image, self.left_coords, self.right_coords)
+                if self.left_coords is not None and self.right_coords is not None:
+                    if self.display_lane_overlay:
+                        self.draw_lane_area(lane_image, self.left_coords, self.right_coords)
+                    if self.display_center_lane_line:
+                        self.draw_center_lane(lane_image, self.left_coords, self.right_coords)
 
-            return lane_image, gray, edges, masked
+            return lane_image, gray, edges, masked, self.left_coords, self.right_coords
             
         except Exception as e:
             print(f"Error in process_image: {e}")
             # Return original frame with empty debug images
             return frame, np.zeros_like(frame[:,:,0]), np.zeros_like(frame[:,:,0]), np.zeros_like(frame[:,:,0])
+        
+    def draw_lane_lines(self, image, left_coords, right_coords):
+        """Draw lanes detected lane"""
+        if left_coords is not None:
+            x1, y1, x2, y2 = left_coords
+            cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 4)  # Green
+            
+        if right_coords is not None:
+            x1, y1, x2, y2 = right_coords
+            cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 4)  # Green
+
 
     def draw_lane_area(self, image, left_coords, right_coords):
         """Draw the lane area between detected lanes"""
@@ -225,17 +258,19 @@ class SimpleLaneDetector:
         except Exception as e:
             print(f"Error drawing lane area: {e}")
     
-    def draw_center_lane(self, frame, left_coords, right_coords, color=(0, 255, 0), thickness=3):
+    def draw_center_lane(self, frame, left_coords, right_coords, color=(0, 255, 0), thickness=5):
+        """Draw the projected center lane line between detected lanes"""
         try:
-            # Create points for the lane area
-            left_x1, left_y1, left_x2, left_y2 = left_coords
-            right_x1, right_y1, right_x2, right_y2 = right_coords
+            if self.left_coords is not None and self.right_coords is not None:
+                # Create points for the lane line
+                left_x1, left_y1, left_x2, left_y2 = left_coords
+                right_x1, right_y1, right_x2, right_y2 = right_coords
 
-            mid_bottom = ((left_x1 + right_x1)//2, left_y1)
-            mid_top    = ((left_x2 + right_x2)//2, right_y2)
-            
-            overlay = frame.copy()
-            cv2.line(overlay, mid_bottom, mid_top, color, thickness)
-            cv2.addWeighted(frame, 0.8, overlay, 0.2, 0, frame)
+                mid_bottom = ((left_x1 + right_x1)//2, left_y1)
+                mid_top    = ((left_x2 + right_x2)//2, right_y2)
+                
+                overlay = frame.copy()
+                cv2.line(overlay, mid_bottom, mid_top, color, thickness)
+                cv2.addWeighted(frame, 0.8, overlay, 0.2, 0, frame)
         except Exception as e:
             print(f"Error drawing center line: {e}")

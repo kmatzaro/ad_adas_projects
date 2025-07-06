@@ -20,7 +20,8 @@ import carla
 
 
 class CarlaLaneDetection:
-    def __init__(self, enable_recording=False, town = 'Town03', validation_mode = True):
+    def __init__(self, enable_recording=False, town = 'Town03', validation_mode = True, pygame_display = (1280, 720)):
+        # self.config = config['carla']
         self.client = None
         self.world = None
         self.town = town
@@ -28,10 +29,11 @@ class CarlaLaneDetection:
         self.vehicle = None
         self.running = False
         self.actors = []
-        self.lane_detector = SimpleLaneDetector((1280, 720))
+        self.lane_detector = None
         self.validation_mode = validation_mode
         self.enable_recording = enable_recording
         self.video_out = None
+        self.pygame_display = pygame_display
         self.current_frame = None  # Store current frame for main thread
         
         if self.enable_recording:
@@ -45,21 +47,21 @@ class CarlaLaneDetection:
         
         # Display settings
         pygame.init()
-        self.display = pygame.display.set_mode(self.lane_detector.img_size)
-        pygame.display.set_caption("CARLA Lane Detection")
+        self.display = pygame.display.set_mode(pygame_display)
+        pygame.display.set_caption("CARLA Synchronous Client")
 
     def init_video_writer(self):
         """Initialize video writer"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         output_name = f"lane_detection_{timestamp}.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        self.video_out = cv2.VideoWriter(output_name, fourcc, 30.0, self.lane_detector.img_size)
+        self.video_out = cv2.VideoWriter(output_name, fourcc, 30.0, self.pygame_display)
 
     def carla_setup(self):
         """Initialize CARLA connection and spawn vehicle"""
         try:
             # Connect to CARLA server
-            self.client = carla.Client("localhost", 2000)
+            self.client = carla.Client('localhost', 2000)
             self.client.set_timeout(10.0)
             self.world = self.client.load_world(self.town)
             blueprint_library = self.world.get_blueprint_library()
@@ -67,7 +69,7 @@ class CarlaLaneDetection:
             # Configure synchronous mode
             settings = self.world.get_settings()
             settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 1.0 / 20  # denominator is the number of fps to run
+            settings.fixed_delta_seconds = 1.0 / 30  # denominator is the number of fps to run
             self.world.apply_settings(settings)
 
             # Set traffic manager to synchronous mode
@@ -101,12 +103,16 @@ class CarlaLaneDetection:
             )
             self.actors.append(self.camera)
 
-            # FIXED: Set up camera callback properly (no separate thread needed)
+            # Set up camera callback
             self.camera.listen(lambda image: self.camera_callback(image))
 
+            # Set up the Lane detection system
+            image_size = (int(self.camera.attributes['image_size_x']), int(self.camera.attributes['image_size_y']))
+            self.lane_detector = SimpleLaneDetector(image_size, display_lane_lines=True, display_center_lane_line=True, display_lane_overlay=True)
+
+            # Set up the validation procedure
             if self.validation_mode:
                 self.validator = LaneValidator(self.world, self.camera, self.vehicle, self.lane_detector)
-                self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
 
             print("CARLA setup complete!")
             return True
@@ -116,7 +122,7 @@ class CarlaLaneDetection:
             return False
 
     def camera_callback(self, image):
-        """Process camera images (called from CARLA's thread)"""
+        """Process camera images"""
         try:
             # Convert CARLA image to numpy array
             array = np.frombuffer(image.raw_data, dtype=np.uint8)
@@ -127,7 +133,12 @@ class CarlaLaneDetection:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
             # Process with lane detector
-            result, gray, edges, masked = self.lane_detector.process_image(frame)
+            result, gray, edges, masked, left_coords, right_coords = self.lane_detector.process_image(frame)
+
+            if self.validation_mode:
+                    self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
+                    if self.sim_time > 5.0: # Ad-hoc value so that the simulator has started
+                        self.frame_id, self.capture_times, self.logs = self.validator.run_validation(self.sim_time, result, self.frame_id, self.capture_times, self.logs, left_coords, right_coords, draw_det_vs_gt=True)
             
             # Store processed frame for main thread to display
             self.current_frame = {
@@ -205,12 +216,6 @@ class CarlaLaneDetection:
             while self.running:
                 # Tick the world to advance simulation
                 self.world.tick()
-
-                if self.validation_mode:
-                    self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
-                    if self.sim_time > 5.0:
-                        self.frame_id, self.capture_times, self.logs = self.validator.run_validation(self.sim_time, self.current_frame, self.frame_id, self.capture_times, self.logs)
-                    
                 
                 # Handle pygame events
                 for event in pygame.event.get():
@@ -253,7 +258,7 @@ class CarlaLaneDetection:
                 self.update_display()
                 
                 # Maintain consistent frame rate
-                clock.tick(20)  # 20 FPS to match CARLA simulation
+                clock.tick(float(1.0/self.world.get_settings().fixed_delta_seconds))  # 30 FPS to match CARLA simulation
                 
         except KeyboardInterrupt:
             print("Interrupted by user")
@@ -294,5 +299,5 @@ class CarlaLaneDetection:
 
 
 if __name__ == '__main__':
-    carla_lane_detection = CarlaLaneDetection(enable_recording=False, town='Town05')
+    carla_lane_detection = CarlaLaneDetection(enable_recording=False, town='Town05', validation_mode=False)
     carla_lane_detection.run()

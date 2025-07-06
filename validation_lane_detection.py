@@ -2,16 +2,16 @@ import numpy as np
 import cv2
 import csv
 import os
+import shutil
 
 class LaneValidator:
     def __init__(self, world, camera_actor, vehicle, lane_detector, output_dir="validation"):
         """
         Paramters:
-        -----------
-        world          : carla.World object
-        camera_actor   : carla.Actor (the RGB camera)
-        lane_detector  : your SimpleLaneDetector instance
-        output_dir     : where to save logs and overlay frames
+            world          : carla.World object
+            camera_actor   : carla.Actor (the RGB camera)
+            lane_detector  : a LaneDetector instance
+            output_dir     : where to save logs and overlay frames
         """
         self.world         = world
         self.camera        = camera_actor
@@ -19,18 +19,24 @@ class LaneValidator:
         self.lane_detector = lane_detector
         self.map           = world.get_map()
         self.output_dir    = output_dir
+
+        # Cleanup any existing directory
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+            print(f"Cleaned up and prepared output directory: {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
 
         # Build camera intrinsics once
         img_w, img_h = lane_detector.img_size
         fov = float(self.camera.attributes['fov'])
+        focal = img_w / (2.0 * np.tan(fov * np.pi / 360.0))
         self.K = np.array([
-            [ img_w/(2*np.tan(np.deg2rad(fov)/2)), 0, img_w/2 ],
-            [ 0, img_w/(2*np.tan(np.deg2rad(fov)/2)), img_h/2 ],
-            [ 0, 0, 1 ]
+            [ focal, 0    , img_w/2 ],
+            [ 0    , focal, img_h/2 ],
+            [ 0    , 0    , 1       ]
         ])
 
-    def sample_ground_truth(self, vehicle, dist=1.0, num_pts=50):
+    def sample_ground_truth(self, vehicle, dist=0.1, num_pts=100):
         """Sample `num_pts` waypoints spaced `dist` meters along the ego lane."""
         ego_loc = vehicle.get_transform().location
         wp = self.map.get_waypoint(ego_loc)
@@ -49,11 +55,10 @@ class LaneValidator:
         X = np.array([location.x, location.y, location.z, 1.0])
         M = np.array(self.camera.get_transform().get_inverse_matrix())
         cam_coords = M @ X
-        if cam_coords[2] <= 0.01:
-            return None
-        uvw = self.K @ cam_coords[:3]
-        u, v = int(uvw[0]/uvw[2]), int(uvw[1]/uvw[2])
-        return (u, v)
+        cam_coords = [cam_coords[1], -cam_coords[2], cam_coords[0]]
+        uvw = self.K @ cam_coords
+        u, v = int(uvw[0]/uvw[2]), int(uvw[1]/uvw[2]) # Normalize
+        return (u, v) # (u,v) are 2D pixel coords
 
     def compute_metrics(self, det_midpoints, gt_pixels, threshold_px=10):
         """Given lists of (u,v) detected and ground-truth points, compute errors."""
@@ -71,59 +76,78 @@ class LaneValidator:
             f"pct_within_{threshold_px}px": float(np.mean(errors < threshold_px)) * 100
         }
 
-    def validate_frame(self, frame_rgb, det_left, det_right, vehicle, frame_id):
+    def validate_frame(self, image, left_coords, right_coords, vehicle, frame_id, num_points_interpolate = 30):
         """Run validation on a single frame:
            - sample GT, project, detect midpoints, compute, visualize, and log.
         """
-        # 1) sample & project GT
+        # 1) sample & project GT up to 60% from the bottom to match prediction
+        height = image.shape[0]
         gt3d = self.sample_ground_truth(vehicle)
-        gt2d = [p for p in (self.project_to_image(pt) for pt in gt3d) if p]
+        raw_gt2d = [p for p in (self.project_to_image(pt) for pt in gt3d) if p]
 
-        # 2) build detected mid-lane pts along image rows
         h = self.lane_detector.img_size[1]
-        ploty = np.linspace(int(h*0.6), h-1, num=30)
-        left_fit = None if det_left is None else np.polyfit([det_left[1], det_left[3]], [det_left[0], det_left[2]], 1)
-        right_fit= None if det_right is None else np.polyfit([det_right[1],det_right[3]],[det_right[0],det_right[2]],1)
+        y_min = int(0.6 * h)
+        gt2d = [(u, v) for (u, v) in raw_gt2d if v >= y_min]
+
+         # 2) build detected mid‐lane pts directly from coords
         det_mid = []
-        for y in ploty:
-            if left_fit is None or right_fit is None:
-                break
-            xl = np.polyval(left_fit, y)
-            xr = np.polyval(right_fit, y)
-            det_mid.append((int((xl+xr)/2), int(y)))
+        if left_coords is not None and right_coords is not None:
+            x1_l, y1, x2_l, y2 = left_coords
+            x1_r, _,  x2_r, _  = right_coords
 
-        # 3) compute metrics
-        metrics = self.compute_metrics(det_mid, gt2d)
-
-        # 4) visualize overlay
-        vis = frame_rgb.copy()
-        # draw GT in yellow
-        for u,v in gt2d:
-            cv2.circle(vis, (u,v), 3, (0,255,255), -1)
-        # draw midpoints in red
-        for u,v in det_mid:
-            cv2.circle(vis, (u,v), 3, (0,0,255), -1)
-
-        # save visualization
-        cv2.imwrite(os.path.join(self.output_dir, f"frame_{frame_id:04d}.png"), vis)
-
+            # pick N points interpolated between y1→y2
+            ploty = np.linspace(y1, y2, num=num_points_interpolate).astype(int)
+            for y in ploty:
+                # linear interpolation on each line:
+                t = (y - y1) / (y2 - y1)
+                xl = int(x1_l + t * (x2_l - x1_l))
+                xr = int(x1_r + t * (x2_r - x1_r))
+                det_mid.append(((xl + xr)//2, y))
+        
+        # 3) compute metrics only if you have a mid‐lane
+        if det_mid:
+            metrics = self.compute_metrics(det_mid, gt2d)
+        else:
+            # log NaNs or zeros, or simply skip
+            metrics = {
+            "mean_error": None,
+            "rmse":       None,
+            "pct_within_10px": None
+            }
         # return metrics for logging
         metrics["frame"] = frame_id
-        return metrics
+        metrics["len_det_mid"] = len(det_mid)
+        return metrics, gt2d, det_mid
 
-    def run_validation(self, sim_time, current_frame, frame_id, capture_times, logs, num_frames=10, time_intervals=10.0, log_csv="metrics.csv"):
+    def draw_detected_vs_gt(self, image, gt2d, det_mid, frame_id, save_frame=True):
+        # visualize overlay
+        # draw GT in yellow
+        for u,v in gt2d: cv2.circle(image, (u,v), 3, (0,255,255), -1)
+        # draw midpoints in red
+        if len(det_mid) > 0:
+            for u,v in det_mid: cv2.circle(image, (u,v), 3, (0,0,255), -1)
+        if save_frame:
+        # save visualization
+            cv2.imwrite(os.path.join(self.output_dir, f"frame_{frame_id:04d}.png"), image)
+
+        
+
+    def run_validation(self, sim_time, image, frame_id, capture_times, logs, left_coords, right_coords, draw_det_vs_gt=True, num_frames=30, time_intervals=5.0, log_csv="metrics.csv"):
         """Validate each, and write CSV."""
-        if current_frame and sim_time >= capture_times and frame_id <= num_frames:
-            frame_rgb = current_frame["result"]
-            left, right = self.lane_detector.prev_left_coords, self.lane_detector.prev_right_coords
-            m = self.validate_frame(frame_rgb, left, right, self.vehicle, frame_id)
-            logs.append(m)
+        metrics, gt2d, det_mid = self.validate_frame(image, left_coords, right_coords, self.vehicle, frame_id)
+
+        if draw_det_vs_gt and det_mid:
+            self.draw_detected_vs_gt(image, gt2d, det_mid, frame_id, save_frame=False)
+
+        if sim_time >= capture_times and frame_id < num_frames:
+            self.draw_detected_vs_gt(image, gt2d, det_mid, frame_id, save_frame=True)
+            logs.append(metrics)
 
             frame_id += 1
             capture_times += time_intervals
-
+            
             # write CSV
-            keys = list(m.keys())
+            keys = list(metrics.keys())
             with open(os.path.join(self.output_dir, log_csv), "w", newline="") as f:
                 writer = csv.DictWriter(f, keys)
                 writer.writeheader()
