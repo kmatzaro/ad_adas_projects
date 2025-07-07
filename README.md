@@ -1,25 +1,44 @@
 # Carla Lane Detection Project
 
-> A real-time lane detection demo in the CARLA simulator, using classical CV methods enhanced with temporal smoothing and lane-area visualization.
+> A configurable, real-time lane detection & validation pipeline in the CARLA simulator, driven by YAML, with live Pygame visualization, robust classical-CV detection, and automatic ground-truth metrics logging.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-* 🎮 **CARLA Integration**: Runs in synchronous mode at a fixed timestep with Traffic Manager autopilot.
-* 🧠 **Robust Lane Detection**:
+- **YAML Configuration**  
+  All parameters for CARLA setup, camera, lane detector, and validation live in a single `config.yaml`. Tweak FOV, resolutions, thresholds, sync mode, capture intervals, and more without touching code.
 
-  * **Adaptive ROI** separate trapezoid masks for left/right lanes tuned for road perspective.
-  * **Slope filtering**: ignores near-horizontal and extreme-angle lines.
-  * **Temporal smoothing**: exponential moving average to reduce jitter.
-  * **Lane-area fill**: semi-transparent polygon between left and right lanes.
-* 🖼️ **Debug Overlays**: live thumbnails of gray, edge, and masked images in the Pygame window.
-* 📹 **Optional Recording**: Timestamped MP4 output of the main view.
-* 🕹️ **Controls**:
+- **Robust Classical-CV Pipeline**  
+  - Gaussian blur → Canny edges → Hough lines  
+  - Slope filtering (ignore near-horizontal/extreme lines)  
+  - Exponential Moving Average smoothing + fallback for missing frames  
+  - Semi-transparent lane-area fill and center-line overlay  
 
-  * **ESC** to quit.
-  * **SPACE** to toggle autopilot on/off.
-  * **W/S/A/D** for manual control when autopilot is disabled.
+- **Automated Validation & Metrics**  
+  - Samples CARLA waypoints, projects to 2D, interpolates predicted midpoints  
+  - Computes per-frame mean error, RMSE, percentage within pixel threshold  
+  - Saves validation CSV and per-frame overlay PNGs  
+
+- **Live Debug Overlays**  
+  - In-window thumbnails of gray, edge, and masked ROI images  
+  - Adjustable via config flags  
+
+- **Optional Video Recording**  
+  - Timestamped MP4 output of the main view  
+  - Controlled via a simple boolean in `config.yaml`
+
+- **CARLA Integration & Controls**  
+  - Synchronous mode at fixed delta (e.g. 20 fps) with Traffic Manager autopilot  
+  - Keyboard:  
+    - **ESC**: quit  
+    - **SPACE**: toggle autopilot  
+    - **W/S/A/D**: manual throttle/brake/steer when autopilot is off  
+
+- **Modular Codebase**  
+  - `SimpleLaneDetector` for detection  
+  - `LaneValidator` for ground-truth comparison  
+  - `CarlaLaneDetection` for simulation loop & display  
 
 ---
 
@@ -32,105 +51,135 @@
 ## 🛠️ Installation
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/carla-lane-detection.git
-cd carla-lane-detection
+git clone https://github.com/kmatzaro/perception_autonomous_driving.git
+cd perception_autonomous_driving
 
-# (Optional) Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# (Optional) Create & activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
----
-
-## 🔧 Requirements
-
-* Python 3.7
-* CARLA Simulator (tested on v0.9.15)
-* OpenCV (`opencv-python`)
-* Pygame
-* NumPy
-
-> Note: CARLA must be running (Unreal engine) before launching the script.
+> **Note:** Make sure the CARLA server (Unreal Engine) is running before launching.
 
 ---
 
-## 🏃‍♂️ Usage
+## ⚙️ Configuration
 
-1. **Start CARLA** (in a separate terminal):
+All tunable settings live in **`config.yaml`** at the project root. Example structure:
 
-   ```bash
-   ./CarlaUE4.sh  # or CarlaUE4.exe on Windows
-   ```
-2. **Run the demo**:
+```yaml
+carla:
+  host: "localhost"
+  port: 2000
+  timeout: 10.0
+  town: "Town03"
+  validation_mode: False
+  enable_recording: False
+  FPS: 30
+  pygame_display: # It better match image_resize resolution
+    display_width: 1280 
+    display_height: 720
+  camera:
+    image_width: 1920
+    image_height: 1080
+    fov: 90
+    transform:
+      location: { x: 1.5, y: 0.0, z: 1.3 }
+      rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
 
-   ```bash
-   python carla_lane_detection.py
-   ```
-3. **Options**:
+lane_detector:
+  image_resize:
+    image_width: 1280
+    image_height: 720
+  gaussian_blur:
+    kernel_size_x: 3
+    kernel_size_y: 3
+    sigma_x: 5
+  canny:
+    low_thresh: 50
+    high_thresh: 150
+  hough: 
+    rho: 1
+    threshold: 30
+    min_line_len: 40
+    max_line_gap: 100
+  smoothing_factor: 0.9
+  max_missing: 20
+  display_lane_overlay: True
+  display_lane_lines : True
+  display_center_lane_line : True
 
-   * Enable recording by passing `enable_recording=True` in the script or modifying the `__main__` call.
-
----
-
-## 🔍 Code Structure
-
-```bash
-├── carla_lane_detection.py       # Main app
-├── camera_image_sensor.py        # This script captures frames from a drive storing them fo future processes
-├── detection_yolo.py             # We perform inference on the image data from carla using YOLO
-├── simple_lane_detection.py      # Classical CV lane detector
-├── requirements.txt
-├── demo/
-│   └── lane_detection_demo.gif
-└── README.md
+validation:
+  output_dir: "validation"
+  threshold_px: 10
+  num_captures: 30
+  interval_seconds: 5.0
+  y_min_pct: 0.6
+  log_csv: "metrics.csv"
+  draw_det_vs_gt: True
 ```
 
 ---
 
-## 🧱 Algorithm Steps
+## 🚀 Usage
 
-1. **Preprocessing**:
+1. **Launch CARLA** in a separate terminal:  
+   ```bash
+   ./CarlaUE4.sh      # Linux/macOS
+   CarlaUE4.exe       # Windows
+   ```
+2. **Run the app**:  
+   ```bash
+   python carla_lane_detection.py
+   ```
+3. **Controls**:  
+   - **ESC**: quit  
+   - **SPACE**: toggle autopilot  
+   - **W/S/A/D**: manual control when autopilot is off  
 
-   * Gaussian blur + Canny edge detection
-2. **Region of Interest (ROI)**:
+---
 
-   * Two separate trapezoid masks to focus on left and right lanes perspective
-3. **Line Detection**:
+## 📂 Project Structure
 
-   * Hough transform to extract line segments
-   * Filter by slope range (0.3–3.0) and side of image for left/right lanes
-4. **Line Fitting & Smoothing**:
+```bash
+├── carla_lane_detection.py       # Main simulation & display loop
+├── camera_image_sensor.py        # This script captures frames from a drive storing them fo future processes
+├── detection_yolo.py             # We perform inference on the image data from carla using YOLO
+├── simple_lane_detection.py      # Classical CV lane detector
+├── validation_lane_detection.py  # Ground-truth validation & metrics
+├── requirements.txt
+├── demo/
+│   └── lane_detection_demo.gif
+└── README.md              
+```
 
-   * Average slope/intercept of segments
-   * EMA smoothing across frames
-5. **Visualization**:
+---
 
-   * Draw lane lines and fill lane area with semi-transparent polygon
-   * Debug thumbnails for gray, edges, masked
-6. **CARLA Integration**:
+## 📊 Validation & Metrics
 
-   * Synchronous stepping with `world.tick()`
-   * Traffic Manager autopilot at specific FPS
-   * Pygame display + input controls
+- **Mean error** (pixels)  
+- **RMSE** (pixels)  
+- **Percentage within threshold** (e.g. 10 px)  
+
+Results are saved to `validation/metrics.csv` and overlays under `validation/frame_XXXX.png`.
 
 ---
 
 ## 🔄 Future Work
 
-* Integrate **bird’s-eye-view** and sliding-window search for lane detection.
-* Replace classical CV with **deep learning** (e.g., SCNN, YOLOv8-seg).
-* Compare against CARLA’s **ground-truth lane topology** for quantitative evaluation.
-* Add **curvature** and **vehicle offset** metrics on-screen.
+- Add **bird’s-eye-view** & sliding-window detection  
+- Swap in **deep-learning** (e.g. SCNN, YOLOv8-seg)  
+- Compute **lane curvature** & **vehicle offset** in real time  
+- Integrate into **CI pipelines** for automated regression testing  
 
 ---
 
 ## 📜 License
 
-This project is licensed under the MIT License.
+MIT License
 
 ---
 

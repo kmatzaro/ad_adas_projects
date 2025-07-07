@@ -1,38 +1,51 @@
+# config.yaml
+
 carla:
   host: "localhost"
   port: 2000
   timeout: 10.0
   town: "Town03"
-  fixed_delta_seconds: 0.05
-  traffic_manager:
-    port: 8000
-    synchronous: true
+  validation_mode: False
+  enable_recording: False
+  FPS: 30
+  pygame_display: # It better match image_resize resolution
+    display_width: 1280 
+    display_height: 720
   camera:
-    image_width: 1280
-    image_height: 720
+    image_width: 1920
+    image_height: 1080
     fov: 90
     transform:
       location: { x: 1.5, y: 0.0, z: 1.3 }
       rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
 
 lane_detector:
-  resize: [1280, 720]
-  canny: { low_thresh: 50, high_thresh: 150 }
-  roi:
-    y_start_pct: 0.6
-    left_pct: 0.0
-    right_pct: 1.0
-  hough:
+  image_resize:
+    image_width: 1280
+    image_height: 720
+  gaussian_blur:
+    kernel_size_x: 3
+    kernel_size_y: 3
+    sigma_x: 5
+  canny:
+    low_thresh: 50
+    high_thresh: 150
+  hough: 
     rho: 1
-    theta_deg: 1
     threshold: 30
     min_line_len: 40
     max_line_gap: 100
-  smoothing_factor: 0.7
-  max_missing: 10
+  smoothing_factor: 0.9
+  max_missing: 20
+  display_lane_overlay: True
+  display_lane_lines : True
+  display_center_lane_line : True
 
 validation:
   output_dir: "validation"
-  num_captures: 12
-  interval_seconds: 10.0
+  threshold_px: 10
+  num_captures: 30
+  interval_seconds: 5.0
   y_min_pct: 0.6
+  log_csv: "metrics.csv"
+  draw_det_vs_gt: True

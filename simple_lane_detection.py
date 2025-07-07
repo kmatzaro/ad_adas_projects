@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 
 class SimpleLaneDetector:
-    def __init__(self, image_size, display_lane_overlay = True, display_lane_lines = True, display_center_lane_line = True):
+    def __init__(self, config):
         """SimpleLaneDetector class that uses classic CV techniques to obtain lane lines.
     
         Paramters:
@@ -19,17 +19,21 @@ class SimpleLaneDetector:
             smoothing_factor                : Smoothing factor for the EMA (Exponential Moving Average)
         """
         
-        self.img_size = image_size
-        self.display_lane_overlay = display_lane_overlay
-        self.display_lane_lines = display_lane_lines
-        self.display_center_lane_line = display_center_lane_line
+        self.config = config['lane_detector']
+        self.img_size = self.config['image_resize']
+        self.display_lane_overlay = self.config['display_lane_overlay']
+        self.display_lane_lines = self.config['display_lane_lines']
+        self.display_center_lane_line = self.config['display_center_lane_line']
+        self.gaussian_cfg = self.config['gaussian_blur']
+        self.canny_cfg = self.config['canny']
+        self.hough_cfg = self.config['hough']
         self.prev_left_coords = None
         self.prev_right_coords = None
         self.left_coords = None
         self.right_coords = None
         self.missing_left = 0
         self.missing_right = 0
-        self.smoothing_factor = 0.9  # For temporal smoothing
+        self.smoothing_factor = self.config['smoothing_factor']  # For temporal smoothing
 
     def average_slope_intercept(self, frame, lines):
         left_fit = []
@@ -118,7 +122,7 @@ class SimpleLaneDetector:
         """Main processing pipeline"""
         try:
             # Resize image to specified size
-            frame = cv2.resize(image, self.img_size)
+            frame = cv2.resize(image, (self.img_size['image_width'], self.img_size['image_height']))
             
             # Convert to grayscale (handle both RGB and BGR)
             if len(frame.shape) == 3:
@@ -127,10 +131,12 @@ class SimpleLaneDetector:
                 gray = frame.copy()
                 
             # Apply Gaussian blur to reduce noise
-            blur = cv2.GaussianBlur(gray, (3, 3), 5)
+            blur = cv2.GaussianBlur(gray,
+                (self.gaussian_cfg['kernel_size_x'], self.gaussian_cfg['kernel_size_y']),
+                self.gaussian_cfg['sigma_x'])
             
             # Edge detection with adaptive thresholds
-            edges = cv2.Canny(blur, 50, 150, apertureSize=3)
+            edges = cv2.Canny(blur, self.canny_cfg['low_thresh'], self.canny_cfg['high_thresh'])
 
             # Define region of interest (trapezoid)
             height, width = edges.shape
@@ -164,11 +170,11 @@ class SimpleLaneDetector:
             # Hough line detection with optimized parameters
             lines = cv2.HoughLinesP(
                 masked, 
-                rho=1,                    # Distance resolution in pixels
-                theta=np.pi / 180,        # Angle resolution in radians
-                threshold=30,             # Minimum votes
-                minLineLength=40,         # Minimum line length
-                maxLineGap=100            # Maximum gap between line segments
+                rho=self.hough_cfg['rho'],                    # Distance resolution in pixels
+                theta=np.pi/180,                              # Angle resolution in radians
+                threshold=self.hough_cfg['threshold'],        # Minimum votes
+                minLineLength=self.hough_cfg['min_line_len'], # Minimum line length
+                maxLineGap=self.hough_cfg['max_line_gap']     # Maximum gap between line segments
             )
 
             # Process and draw detected lanes
@@ -185,7 +191,7 @@ class SimpleLaneDetector:
 
                 if self.left_coords is None:
                     self.missing_left += 1
-                    if self.missing_left < 20:
+                    if self.missing_left < self.config['max_missing']:
                         self.left_coords = self.prev_left_coords
                     else:
                         # after 50 bad frames, clear everything
@@ -197,7 +203,7 @@ class SimpleLaneDetector:
                 
                 if self.right_coords is None:
                     self.missing_right += 1
-                    if self.missing_right < 20: # This number repersents the number of frames the line will be kept
+                    if self.missing_right < self.config['max_missing']: # This number repersents the number of frames the line will be kept
                         self.right_coords = self.prev_right_coords
                     else:
                         # after 50 bad frames, clear everything
