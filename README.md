@@ -44,7 +44,7 @@
 
 ## 📸 Demo
 
-![Lane Detection Demo](demo/lane_detection_demo.gif)
+![Lane Detection Demo](perception_ad/demo/lane_detection_demo.gif)
 
 ---
 
