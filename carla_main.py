@@ -2,16 +2,14 @@ import pygame
 import numpy as np
 import sys, glob, os
 import cv2
-from threading import Thread
-from simple_lane_detection import SimpleLaneDetector
-from validation_lane_detection import LaneValidator
+from perception_ad.simple_lane_detection import SimpleLaneDetector
+from perception_ad.validation_lane_detection import LaneValidator
 import random
 import datetime
 import yaml
-import time
 
 try:
-    sys.path.append(glob.glob('../carla/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
+    sys.path.append(glob.glob('./carla/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
         sys.version_info.major,
         sys.version_info.minor,
         'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
@@ -59,7 +57,7 @@ class CarlaLaneDetection:
     def init_video_writer(self):
         """Initialize video writer"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_name = f"lane_detection_{timestamp}.mp4"
+        output_name = f"perception_ad/recordings/lane_detection_{timestamp}.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.video_out = cv2.VideoWriter(output_name, fourcc, self.FPS, self.pygame_display)
 

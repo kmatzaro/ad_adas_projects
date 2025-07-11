@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-import matplotlib
 
 class SimpleLaneDetector:
     def __init__(self, config):

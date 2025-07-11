@@ -1,9 +1,12 @@
 perception_ad/*.pt
 perception_ad/*_data
-perception_ad/*.mp4
-perception_ad/validation*
+perception_ad/recordings
+perception_ad/validation_2*
 
 carla
+
+state_estimation
+controller_ad
 
 __pycache__
 .python-version
