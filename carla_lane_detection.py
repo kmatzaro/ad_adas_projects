@@ -52,6 +52,7 @@ class CarlaLaneDetection:
         
         # Display settings
         pygame.init()
+        self.font = pygame.font.SysFont(pygame.font.get_default_font(), 16)
         self.display = pygame.display.set_mode(self.pygame_display)
         pygame.display.set_caption("CARLA Synchronous Client")
 
@@ -154,7 +155,7 @@ class CarlaLaneDetection:
             }
             
         except Exception as e:
-            print(f"Error in camera callback:", repr(e))
+            print(f"Error in camera callback: {e}")
 
     def update_display(self):
         """Update pygame display with current frame"""
@@ -185,8 +186,7 @@ class CarlaLaneDetection:
                 self.display.blit(debug_surface, (self.lane_detector.img_size['image_width']-200, y_offset))
                 
                 # Add text label
-                font = pygame.font.SysFont(pygame.font.get_default_font(), 16)
-                text = font.render(title, True, (255, 255, 255))
+                text = self.font.render(title, True, (255, 255, 255))
                 self.display.blit(text, (self.lane_detector.img_size['image_width']-200, y_offset + 120))
 
             draw_debug("Gray", gray, 20)
@@ -211,7 +211,7 @@ class CarlaLaneDetection:
         print("Autopilot enabled! Vehicle will drive automatically.")
         print("Press ESC to quit, SPACE to toggle autopilot on/off")
         print("Controls: W/S = throttle/brake, A/D = steer (when autopilot off)")
-        print(f"Running in synchronous mode at {1.0/self.world.get_settings().fixed_delta_seconds} FPS")
+        print(f"Running in synchronous mode at {self.FPS} FPS")
         
         autopilot_enabled = True
         clock = pygame.time.Clock()  # Add clock for consistent timing
@@ -263,7 +263,7 @@ class CarlaLaneDetection:
                 self.update_display()
                 
                 # Maintain consistent frame rate
-                clock.tick(float(self.FPS))  # 30 FPS to match CARLA simulation
+                clock.tick(self.FPS)  # FPS to match CARLA simulation
                 
         except KeyboardInterrupt:
             print("Interrupted by user")

@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import csv
 import os
-import shutil
+import datetime
 
 class LaneValidator:
     def __init__(self, config, world, camera_actor, vehicle, lane_detector):
@@ -21,11 +21,8 @@ class LaneValidator:
         self.map           = world.get_map()
         self.output_dir    = self.config['output_dir']
 
-        # Cleanup any existing directory
-        if os.path.exists(self.output_dir):
-            shutil.rmtree(self.output_dir)
-            print(f"Cleaned up and prepared output directory: {self.output_dir}")
-        os.makedirs(self.output_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs(f"{self.output_dir}_{timestamp}", exist_ok=True)
 
         # Build camera intrinsics once
         self.img_w = lane_detector.img_size['image_width'] 

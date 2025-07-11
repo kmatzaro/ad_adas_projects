@@ -2,6 +2,6 @@
 *_data
 *.mp4
 
-validation
+validation*
 
 __pycache__

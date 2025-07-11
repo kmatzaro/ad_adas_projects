@@ -264,7 +264,7 @@ class SimpleLaneDetector:
         except Exception as e:
             print(f"Error drawing lane area: {e}")
     
-    def draw_center_lane(self, frame, left_coords, right_coords, color=(0, 255, 0), thickness=5):
+    def draw_center_lane(self, frame, left_coords, right_coords, color=(255, 255, 0), thickness=5):
         """Draw the projected center lane line between detected lanes"""
         try:
             if self.left_coords is not None and self.right_coords is not None:
