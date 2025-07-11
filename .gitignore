@@ -1,7 +1,9 @@
-*.pt
-*_data
-*.mp4
+perception_ad/*.pt
+perception_ad/*_data
+perception_ad/*.mp4
+perception_ad/validation*
 
-validation*
+carla
 
 __pycache__
+.python-version
