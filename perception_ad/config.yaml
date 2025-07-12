@@ -5,7 +5,7 @@ carla:
   port: 2000
   timeout: 10.0
   town: "Town05"
-  validation_mode: True
+  validation_mode: False
   enable_recording: False
   enable_debugs: False
   FPS: 30
