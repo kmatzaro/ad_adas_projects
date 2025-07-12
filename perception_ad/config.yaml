@@ -6,7 +6,8 @@ carla:
   timeout: 10.0
   town: "Town05"
   validation_mode: False
-  enable_recording: True
+  enable_recording: False
+  enable_debugs: False
   FPS: 30
   pygame_display: # It's better to match image_resize resolution
     display_width: 1280 

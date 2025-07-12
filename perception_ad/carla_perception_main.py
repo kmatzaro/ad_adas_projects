@@ -2,14 +2,14 @@ import pygame
 import numpy as np
 import sys, glob, os
 import cv2
-from perception_ad.simple_lane_detection import SimpleLaneDetector
-from perception_ad.validation_lane_detection import LaneValidator
+from simple_lane_detection import SimpleLaneDetector
+from validation_lane_detection import LaneValidator
 import random
 import datetime
 import yaml
 
 try:
-    sys.path.append(glob.glob('./carla/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
+    sys.path.append(glob.glob('../carla/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
         sys.version_info.major,
         sys.version_info.minor,
         'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
@@ -21,24 +21,35 @@ import carla
 
 class CarlaLaneDetection:
     def __init__(self, config):
+        """
+        Main class for operating carla and it's various modes.
+
+        Parameters
+        ----------
+        """
+        # Carla specific init variables
         self.config             = config
         self.carla_config       = config['carla']
         self.FPS                = self.carla_config['FPS']
+        self.enable_debugs      = self.carla_config['enable_debugs']
         self.client             = None
         self.world              = None
-        self.town               = self.carla_config['town']
         self.camera             = None
         self.camera_config      = self.carla_config['camera']
         self.vehicle            = None
         self.running            = False
         self.actors             = []
-        self.lane_detector      = None
-        self.validation_mode    = self.carla_config['validation_mode']
-        self.enable_recording   = self.carla_config['enable_recording']
-        self.video_out          = None
-        self.pygame_display     = (self.carla_config['pygame_display']['display_width'], self.carla_config['pygame_display']['display_height'])
         self.current_frame      = None  # Store current frame for main thread
+        self.pygame_display     = (self.carla_config['pygame_display']['display_width'], self.carla_config['pygame_display']['display_height'])
+
+        # Detection, validation and control
+        self.lane_detector      = SimpleLaneDetector(config=self.config)
+
+        self.validation_mode    = self.carla_config['validation_mode']
+        if self.validation_mode:
+            self.validator = LaneValidator(self.config, self.world, self.camera, self.vehicle, self.lane_detector)
         
+        self.enable_recording   = self.carla_config['enable_recording']
         if self.enable_recording:
             self.init_video_writer()
         
@@ -48,10 +59,10 @@ class CarlaLaneDetection:
             self.logs           = []
             self.sim_time       = None
         
-        # Display settings
+        # Pygame and display settings
         pygame.init()
-        self.font = pygame.font.SysFont(pygame.font.get_default_font(), 16)
-        self.display = pygame.display.set_mode(self.pygame_display)
+        self.font               = pygame.font.SysFont(pygame.font.get_default_font(), 16)
+        self.display            = pygame.display.set_mode(self.pygame_display)
         pygame.display.set_caption("CARLA Synchronous Client")
 
     def init_video_writer(self):
@@ -67,7 +78,7 @@ class CarlaLaneDetection:
             # Connect to CARLA server
             self.client = carla.Client(self.carla_config['host'], self.carla_config['port'])
             self.client.set_timeout(self.carla_config['timeout'])
-            self.world = self.client.load_world(self.town)
+            self.world = self.client.load_world(self.carla_config['town'])
             blueprint_library = self.world.get_blueprint_library()
 
             # Configure synchronous mode
@@ -81,11 +92,10 @@ class CarlaLaneDetection:
             traffic_manager.set_synchronous_mode(True)
             print(f"Synchronous mode enabled at {self.FPS} FPS")
 
-            # FIXED: Spawn vehicle FIRST, then camera
+            # Spawn vehicle first, then camera
             spawn_points = self.world.get_map().get_spawn_points()
             vehicle_bp = blueprint_library.filter('vehicle.tesla.model3')[0]
             self.vehicle = self.world.spawn_actor(vehicle_bp, random.choice(spawn_points))
-            self.vehicle.set_autopilot(True)
             self.actors.append(self.vehicle)
 
             # Setup camera AFTER vehicle is spawned
@@ -110,14 +120,6 @@ class CarlaLaneDetection:
             # Set up camera callback
             self.camera.listen(lambda image: self.camera_callback(image))
 
-            # Set up the Lane detection system
-            image_size = (int(self.camera.attributes['image_size_x']), int(self.camera.attributes['image_size_y']))
-            self.lane_detector = SimpleLaneDetector(config=self.config)
-
-            # Set up the validation procedure
-            if self.validation_mode:
-                self.validator = LaneValidator(self.config, self.world, self.camera, self.vehicle, self.lane_detector)
-
             print("CARLA setup complete!")
             return True
             
@@ -141,7 +143,7 @@ class CarlaLaneDetection:
 
             if self.validation_mode:
                     self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
-                    if self.sim_time > 5.0: # Ad-hoc value so that the simulator has started
+                    if self.current_frame:
                         self.frame_id, self.capture_times, self.logs = self.validator.run_validation(self.sim_time, result, self.frame_id, self.capture_times, self.logs, left_coords, right_coords)
             
             # Store processed frame for main thread to display
@@ -149,7 +151,7 @@ class CarlaLaneDetection:
                 'result': result,
                 'gray': gray,
                 'edges': edges,
-                'masked': masked
+                'masked': masked,
             }
             
         except Exception as e:
@@ -186,10 +188,10 @@ class CarlaLaneDetection:
                 # Add text label
                 text = self.font.render(title, True, (255, 255, 255))
                 self.display.blit(text, (self.lane_detector.img_size['image_width']-200, y_offset + 120))
-
-            draw_debug("Gray", gray, 20)
-            draw_debug("Edges", edges, 160)
-            draw_debug("Masked", masked, 300)
+            if self.enable_debugs:
+                draw_debug("Gray", gray, 20)
+                draw_debug("Edges", edges, 160)
+                draw_debug("Masked", masked, 300)
 
             pygame.display.flip()  # Use flip() instead of update() for better performance
             
@@ -204,14 +206,13 @@ class CarlaLaneDetection:
         
         self.running = True
         
-        # Enable autopilot
-        self.vehicle.set_autopilot(True)
+        autopilot_enabled = True
+        self.vehicle.set_autopilot(autopilot_enabled)
         print("Autopilot enabled! Vehicle will drive automatically.")
         print("Press ESC to quit, SPACE to toggle autopilot on/off")
         print("Controls: W/S = throttle/brake, A/D = steer (when autopilot off)")
         print(f"Running in synchronous mode at {self.FPS} FPS")
         
-        autopilot_enabled = True
         clock = pygame.time.Clock()  # Add clock for consistent timing
         
         try:
@@ -284,7 +285,7 @@ class CarlaLaneDetection:
                 except:
                     pass
         
-        if self.video_out:
+        if self.enable_recording:
             self.video_out.release()
         
         # Restore asynchronous mode
