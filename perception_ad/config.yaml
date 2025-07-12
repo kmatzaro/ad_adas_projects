@@ -5,7 +5,7 @@ carla:
   port: 2000
   timeout: 10.0
   town: "Town05"
-  validation_mode: False
+  validation_mode: True
   enable_recording: False
   enable_debugs: False
   FPS: 30
@@ -45,8 +45,8 @@ lane_detector:
 validation:
   output_dir: "validation"
   threshold_px: 10
-  num_captures: 100
-  interval_seconds: 5.0
+  num_captures: 20
+  interval_seconds: 10.0
   y_min_pct: 0.6
   log_csv: "metrics.csv"
   draw_det_vs_gt: True

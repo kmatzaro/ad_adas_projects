@@ -22,7 +22,8 @@ class LaneValidator:
         self.output_dir    = self.config['output_dir']
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        os.makedirs(f"{self.output_dir}_{timestamp}", exist_ok=True)
+        self.output_dir = f"{self.output_dir}_{timestamp}"
+        os.makedirs(self.output_dir, exist_ok=True)
 
         # Build camera intrinsics once
         self.img_w = lane_detector.img_size['image_width'] 

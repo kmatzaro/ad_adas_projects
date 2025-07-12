@@ -46,8 +46,7 @@ class CarlaLaneDetection:
         self.lane_detector      = SimpleLaneDetector(config=self.config)
 
         self.validation_mode    = self.carla_config['validation_mode']
-        if self.validation_mode:
-            self.validator = LaneValidator(self.config, self.world, self.camera, self.vehicle, self.lane_detector)
+        self.lane_validator          = None
         
         self.enable_recording   = self.carla_config['enable_recording']
         if self.enable_recording:
@@ -117,6 +116,9 @@ class CarlaLaneDetection:
             )
             self.actors.append(self.camera)
 
+            if self.validation_mode:
+                self.lane_validator = LaneValidator(self.config, self.world, self.camera, self.vehicle, self.lane_detector)
+
             # Set up camera callback
             self.camera.listen(lambda image: self.camera_callback(image))
 
@@ -144,7 +146,7 @@ class CarlaLaneDetection:
             if self.validation_mode:
                     self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
                     if self.current_frame:
-                        self.frame_id, self.capture_times, self.logs = self.validator.run_validation(self.sim_time, result, self.frame_id, self.capture_times, self.logs, left_coords, right_coords)
+                        self.frame_id, self.capture_times, self.logs = self.lane_validator.run_validation(self.sim_time, result, self.frame_id, self.capture_times, self.logs, left_coords, right_coords)
             
             # Store processed frame for main thread to display
             self.current_frame = {

@@ -2,6 +2,7 @@ perception_ad/*.pt
 perception_ad/*_data
 perception_ad/recordings
 perception_ad/validation_2*
+!perception_ad/validation_20250712_185611
 
 carla
 
