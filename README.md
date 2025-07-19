@@ -137,9 +137,11 @@ validation:
   interval_seconds: 10.0
   y_min_pct: 0.6
   draw_det_vs_gt: True
+
 ---
 
-## 🚀 Usage
+
+## Usage
 
 1. **Launch CARLA** in a separate terminal:  
    ```bash
@@ -160,11 +162,12 @@ validation:
 ## 📂 Project Structure
 
 ```bash
-├── carla_lane_detection.py       # Main simulation & display loop
-├── camera_image_sensor.py        # This script captures frames from a drive storing them fo future processes
+├── carla_perception_main.py      # Main simulation & display loop
+├── camera_image_sensor.py        # This script captures frames from a drive storing them for future processes
 ├── detection_yolo.py             # We perform inference on the image data from carla using YOLO
 ├── simple_lane_detection.py      # Classical CV lane detector
 ├── validation_lane_detection.py  # Ground-truth validation & metrics
+├── sliding_window.py             # First implementation of sliding window
 ├── requirements.txt
 ├── demo/
 │   └── lane_detection_demo.gif
