@@ -26,6 +26,31 @@ class CarlaLaneDetection:
 
         Parameters
         ----------
+
+            self.config             : General config file in yaml format
+            self.carla_config       : Carla block config file
+            self.FPS                : FPS to run, it also determines tick rate
+            self.enable_debugs      : Whether to enable debug overlays in pygame display
+            self.client             : Carla client
+            self.world              : Carla world
+            self.camera             : Camera 
+            self.camera_config      : Camera block in the yaml config
+            self.vehicle            : Vehicle (ego)
+            self.running            : Flag to determine if carla is running
+            self.actors             : List of actors
+            self.current_frame      : Stores current frame for main thread
+            self.pygame_display     : Pygame display
+            self.lane_detector      : Lane detection class
+            self.validation_mode    : Whether carla runs in lane validation mode
+            self.lane_validator     : Lane validator class
+            self.enable_recording   : Whether to store a video playback of the scene
+
+            For validation only
+                self.frame_id       : 0
+                self.capture_times  : 0.0
+                self.logs           : []
+                self.sim_time       : None
+        ----------
         """
         # Carla specific init variables
         self.config             = config
@@ -43,10 +68,10 @@ class CarlaLaneDetection:
         self.pygame_display     = (self.carla_config['pygame_display']['display_width'], self.carla_config['pygame_display']['display_height'])
 
         # Detection, validation and control
-        self.lane_detector      = SimpleLaneDetector(config=self.config)
+        self.lane_detector      = SimpleLaneDetector(self.config)
 
         self.validation_mode    = self.carla_config['validation_mode']
-        self.lane_validator          = None
+        self.lane_validator     = None
         
         self.enable_recording   = self.carla_config['enable_recording']
         if self.enable_recording:
@@ -185,11 +210,12 @@ class CarlaLaneDetection:
                 if len(debug_img.shape) == 2:  # Grayscale
                     debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)
                 debug_surface = pygame.surfarray.make_surface(np.rot90(debug_img))
-                self.display.blit(debug_surface, (self.lane_detector.img_size['image_width']-200, y_offset))
+                self.display.blit(debug_surface, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
                 
                 # Add text label
                 text = self.font.render(title, True, (255, 255, 255))
-                self.display.blit(text, (self.lane_detector.img_size['image_width']-200, y_offset + 120))
+                self.display.blit(text, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
+                
             if self.enable_debugs:
                 draw_debug("Gray", gray, 20)
                 draw_debug("Edges", edges, 160)
