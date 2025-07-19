@@ -78,50 +78,65 @@ carla:
   town: "Town03"
   validation_mode: False
   enable_recording: False
+  enable_debugs: True
   FPS: 30
-  pygame_display: # It better match image_resize resolution
+
+  pygame_display: # It's better to match image_resize resolution
     display_width: 1280 
     display_height: 720
+
   camera:
-    image_width: 1920
-    image_height: 1080
+    image_width: 1280
+    image_height: 720
     fov: 90
     transform:
       location: { x: 1.5, y: 0.0, z: 1.3 }
       rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
 
 lane_detector:
-  image_resize:
-    image_width: 1280
-    image_height: 720
-  gaussian_blur:
-    kernel_size_x: 3
-    kernel_size_y: 3
-    sigma_x: 5
-  canny:
-    low_thresh: 50
-    high_thresh: 150
-  hough: 
-    rho: 1
-    threshold: 30
-    min_line_len: 40
-    max_line_gap: 100
   smoothing_factor: 0.9
   max_missing: 20
   display_lane_overlay: True
   display_lane_lines : True
   display_center_lane_line : True
 
+  image_resize:
+    image_width: 1280
+    image_height: 720
+
+  gaussian_blur:
+    kernel_size_x: 3
+    kernel_size_y: 3
+    sigma_x: 5
+
+  canny:
+    low_thresh: 50
+    high_thresh: 150
+
+  hough: 
+    rho: 1
+    threshold: 30
+    min_line_len: 40
+    max_line_gap: 100
+
+  bev_lane_detector:
+    bev_enabled: False
+    bev_size:
+      bev_width: 256
+      bev_height: 256
+    src_pts_frac:
+        - [0.0, 1.0]    # bottom-left
+        - [1.0, 1.0]    # bottom-right
+        - [1, 0.45]     # right horizon
+        - [0, 0.45]     # left horizon
+
 validation:
   output_dir: "validation"
   threshold_px: 10
-  num_captures: 30
-  interval_seconds: 5.0
+  num_captures: 20
+  interval_seconds: 10.0
   y_min_pct: 0.6
-  log_csv: "metrics.csv"
   draw_det_vs_gt: True
-```
-
 ---
 
 ## 🚀 Usage
