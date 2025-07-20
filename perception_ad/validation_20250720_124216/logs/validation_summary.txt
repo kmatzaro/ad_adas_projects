@@ -1,0 +1,12 @@
+Lane Detection Validation Summary
+========================================
+
+Total Frames Processed: 20
+Successful Detections: 18
+Failed Detections: 2
+Success Rate: 90.0%
+
+Error Statistics:
+  Average Error: 24.91 pixels
+  Best Error: 0.76 pixels
+  Worst Error: 319.77 pixels

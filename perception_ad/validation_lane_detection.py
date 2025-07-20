@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 @dataclass
 class ValidationMetrics:
-    """Data class for validation metrics with proper typing"""
+    """Data class for validation metrics"""
     frame_id: int
     mean_error_px: Optional[float]
     rmse_px: Optional[float]
@@ -23,7 +23,7 @@ class ValidationMetrics:
 
 class LaneValidator:
     """
-    Professional lane detection validation pipeline for autonomous driving systems.
+    Lane detection validation pipeline for autonomous driving systems.
     
     This validator compares detected lane centerlines against CARLA's high-definition
     map ground truth using quantitative metrics and visual overlays.

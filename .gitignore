@@ -2,6 +2,8 @@ perception_ad/*.pt
 perception_ad/**data
 perception_ad/recordings
 perception_ad/validation_
+perception_ad/gpu_*
+
 
 
 carla
