@@ -13,8 +13,8 @@ carla:
     display_height: 720
 
   camera:
-    image_width: 1920
-    image_height: 1080
+    image_width: 1280
+    image_height: 720
     fov: 90
     transform:
       location: { x: 1.5, y: 0.0, z: 1.3 }

@@ -185,7 +185,7 @@ class CarlaLaneDetection:
         """Initialize video writer with error handling"""
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = "perception_ad/recordings"
+            output_dir = "recordings"
             
             # Create directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
