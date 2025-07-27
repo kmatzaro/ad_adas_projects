@@ -6,12 +6,10 @@ carla:
   FPS: 30
   validation_mode: False
   enable_recording: False
-  enable_debugs: True
-
+  enable_debugs: False
   pygame_display: # It's better to match image_resize resolution
     display_width: 1280 
     display_height: 720
-
   camera:
     image_width: 1280
     image_height: 720
@@ -19,6 +17,9 @@ carla:
     transform:
       location: { x: 1.5, y: 0.0, z: 1.3 }
       rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
+  traffic:
+    number_of_vehicles: 50
+    enbale_traffic: True
 
 lane_detector:
   smoothing_factor: 0.9
@@ -27,26 +28,21 @@ lane_detector:
   display_lane_lines : True
   display_center_lane_line : True
   enable_gpu: False # CPU turns out to be faster in processing single frames with low res.
-
   image_resize:
-    image_width: 1280
-    image_height: 720
-
+    image_width: 960
+    image_height: 640
   gaussian_blur:
     kernel_size_x: 3
     kernel_size_y: 3
     sigma_x: 5
-
   canny:
     low_thresh: 50
     high_thresh: 150
-
   hough: 
     rho: 1
     threshold: 30
     min_line_len: 40
     max_line_gap: 100
-
   bev_lane_detector:
     bev_enabled: False
     bev_size:
@@ -66,7 +62,7 @@ validation:
   y_min_pct: 0.6
   draw_det_vs_gt: True
 
-# sliding_window:
-#   nwindows: 15
-#   margin: 30
-#   minpix: 10
+object_detection:
+  model_size: '11s'
+  confidence_threshold: 0.5
+  nms_threshold: 0.3
