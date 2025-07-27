@@ -92,7 +92,7 @@ class LaneValidator:
     def _setup_output_directory(self) -> None:
         """Create timestamped output directory for validation results"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_dir = self.config.get('output_dir', 'validation_results')
+        base_dir = self.config['output_dir']
         self.output_dir = f"{base_dir}_{timestamp}"
         
         try:

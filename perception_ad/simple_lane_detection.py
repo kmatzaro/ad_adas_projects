@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import logging
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict
 from dataclasses import dataclass
 from bev_transformer import BEVTransformer
 
@@ -19,15 +19,15 @@ class LaneCoordinates:
     @classmethod
     def from_array(cls, coords: np.ndarray) -> 'LaneCoordinates':
         return cls(int(coords[0]), int(coords[1]), int(coords[2]), int(coords[3]))
-    
-    def is_valid(self, img_width: int, img_height: int) -> bool:
-        """Check if coordinates are within image bounds and valid"""
-        return NotImplementedError()
 
 class LaneDetectionParams:
     """Configuration parameters for lane detection"""
     def __init__(self, config: dict):
         lane_config = config['lane_detector']
+
+        # Original image parameters
+        self.img_width_original = lane_config['image_resize']['image_width']
+        self.img_height_original = lane_config['image_resize']['image_height']
         
         # Image processing parameters
         self.img_width = lane_config['image_resize']['image_width']
@@ -84,16 +84,16 @@ class ROIGenerator:
             left_polygon = np.array([[
                 (0, height),                             # Bottom left corner
                 (0, int(height * 0.8)),                  # Left edge, 90% up
-                (int(width * 0.3), int(height * 0.0)), # Approaching center, near top
-                (int(width * 0.5), int(height * 0.0)),  # Center, near top
+                (int(width * 0.3), int(height * 0.0)),   # Approaching center, near top
+                (int(width * 0.5), int(height * 0.0)),   # Center, near top
                 (int(width * 0.1), height)               # Bottom, 10% from left
             ]], np.int32)
 
             right_polygon = np.array([[
                 (width, height),                         # Bottom right corner
                 (width, int(height * 0.8)),              # Right edge, 90% up
-                (int(width * 0.5), int(height * 0.0)), # Approaching center, near top
-                (int(width * 0.7), int(height * 0.0)),  # Center, near top
+                (int(width * 0.5), int(height * 0.0)),   # Approaching center, near top
+                (int(width * 0.7), int(height * 0.0)),   # Center, near top
                 (int(width * 0.9), height)               # Bottom, 90% from left
             ]], np.int32)
         else:
@@ -365,8 +365,11 @@ class SimpleLaneDetector:
             Tuple of (result_image, gray, edges, masked, left_coords, right_coords)
         """
         try:
-            # 1. Preprocess image
-            frame = self._preprocess_image(image)
+            if self.params.img_height == self.params.img_height_original and self.params.img_width == self.params.img_width_original:
+                # 1. Preprocess image
+                frame = self._preprocess_image(image)
+            else:
+                frame = image
             
             # 2. Choose processing frame (BEV or camera)
             processing_frame = self._get_processing_frame(frame)
@@ -542,7 +545,7 @@ class SimpleLaneDetector:
         logger = logging.getLogger(__name__)
         if not logger.handlers:
             handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)

@@ -2,7 +2,8 @@ import pygame
 import numpy as np
 import sys, glob, os
 import cv2
-from simple_lane_detection import SimpleLaneDetector
+# from simple_lane_detection import SimpleLaneDetector
+from enhanced_perception import EnhancedPerception
 # from gpu_simple_lane_detector import GPUEnhancedLaneDetector as SimpleLaneDetector
 from validation_lane_detection import LaneValidator
 import random
@@ -10,16 +11,18 @@ import datetime
 import yaml
 import time
 from collections import deque
-
-try:
-    sys.path.append(glob.glob('../carla/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
-except IndexError:
-    pass
-
 import carla
+from dataclasses import dataclass
+from typing import Optional, Dict
+
+
+@dataclass
+class TimingMetrics:
+    average_detection_time: float
+    min_detection_time: float
+    max_detection_time: float
+    current_fps_est: int
+    real_time_performance: Optional[bool]
 
 
 class PerformanceMonitor:
@@ -33,41 +36,78 @@ class PerformanceMonitor:
     - System degradation over time
     """
     
-    def __init__(self, window_size=100):
+    def __init__(self, config, window_size=1000):
         # Rolling window prevents memory growth and gives recent performance
         self.window_size = window_size
-        self.detection_times = deque(maxlen=window_size)
         self.callback_times = deque(maxlen=window_size)
+        self.lane_detection_times = deque(maxlen=window_size)
+        self.object_detection_times = deque(maxlen=window_size)
+        self.total_perception_times = deque(maxlen=window_size)
         self.frame_count = 0
+        self.FPS = config['carla']['FPS']
         self.start_time = time.time()
         
-    def add_frame_data(self, detection_time, callback_time):
+    def add_frame_data(self, callback_time, perception_time: Dict):
         """Add performance data for current frame"""
-        self.detection_times.append(detection_time)
         self.callback_times.append(callback_time)
+        self.lane_detection_times.append(perception_time['lane_detection_time_ms'])
+        self.object_detection_times.append(perception_time['object_detection_time_ms'])
+        self.total_perception_times.append(perception_time['total_end_time'])
         self.frame_count += 1
         
         # Log every 60 frames = 1 second at 60fps, provides regular feedback
         if self.frame_count % 60 == 0:
-            self._log_performance_stats()
-    
-    def _log_performance_stats(self):
-        """Log comprehensive performance statistics"""
-        if not self.detection_times:
-            return
+            self._log_performance_summary()
+       
+    def get_performance_stats(self, detection_times) -> TimingMetrics:
+        """Statistics for performance tracking"""
+
+        if not detection_times:
+            return TimingMetrics(0, 0, 0, 0, False)
         
-        # Average over recent frames to smooth out noise
-        avg_detection = sum(self.detection_times) / len(self.detection_times)
-        max_detection = max(self.detection_times)
-        min_detection = min(self.detection_times)
-        
-        # Overall FPS gives bigger picture of system health
-        overall_time = time.time() - self.start_time
-        avg_fps = self.frame_count / overall_time if overall_time > 0 else 0
-        
-        print(f"Performance Stats:")
-        print(f"   Detection: {avg_detection:.1f}ms avg ({min_detection:.1f}-{max_detection:.1f}ms)")
-        print(f"   Overall FPS: {avg_fps:.1f}")
+        detection_times_list = list(detection_times)
+
+        # Average detection time
+        avg_detection_time_ms = np.average(detection_times_list)
+
+        # Min/max detection time
+        min_detection_time = np.min(detection_times_list)
+        max_detection_time = np.max(detection_times_list)
+
+        # FPS estimate
+        fps_estimate = 1 / avg_detection_time_ms * 1000
+
+        # Real time performance
+        if avg_detection_time_ms <= 1/self.FPS * 1000:
+            real_time_performance = True
+        else:
+            real_time_performance = False
+
+        return TimingMetrics(
+            average_detection_time = avg_detection_time_ms,
+            min_detection_time = min_detection_time,
+            max_detection_time = max_detection_time,
+            current_fps_est = int(fps_estimate),
+            real_time_performance = real_time_performance
+        )
+
+    def _log_performance_summary(self):
+        """Log function to print performance stats"""
+
+        print("=" * 40)  # Make it wider for better readability
+        print("Object Detection Performance")
+        print("=" * 40)
+
+        for item in list(zip(self.lane_detection_times, self.object_detection_times, self.total_perception_times, self.callback_times)):
+            performance_stats = self.get_performance_stats(item)
+
+            print(f"Average detection time: {performance_stats.average_detection_time:.1f}ms best/worst ({performance_stats.min_detection_time:.1f}ms - {performance_stats.max_detection_time:.1f}ms)", end='\n')
+            print(f"Current FPS estimate: {performance_stats.current_fps_est}")
+            real_time_budget = (1/self.FPS) * 1000
+            if performance_stats.real_time_performance:
+                print(f"Real-time performance: < {real_time_budget:.1f}ms budget")
+            else:
+                print(f"Behind real-time: > {real_time_budget:.1f}ms budget")
 
 
 class CarlaLaneDetection:
@@ -96,7 +136,7 @@ class CarlaLaneDetection:
         self.error_count = 0
         
         # Performance monitoring
-        self.performance_monitor = PerformanceMonitor()
+        self.performance_monitor = PerformanceMonitor(config)
         self.last_frame_time = time.time()
         
         # Attributes
@@ -107,6 +147,7 @@ class CarlaLaneDetection:
         self.camera = None
         self.camera_config = self.carla_config['camera']
         self.vehicle = None
+        self.enbale_traffic = self.carla_config['traffic']['enbale_traffic']
         self.running = False
         self.actors = []
         self.current_frame = None
@@ -116,7 +157,8 @@ class CarlaLaneDetection:
         )
 
         # Detection, validation and control
-        self.lane_detector = SimpleLaneDetector(self.config)
+        # self.lane_detector = SimpleLaneDetector(self.config)
+        self.lane_detector = EnhancedPerception(self.config)
         self.validation_mode = self.carla_config['validation_mode']
         self.lane_validator = None
         
@@ -243,6 +285,11 @@ class CarlaLaneDetection:
                 if not self._spawn_actors():
                     raise RuntimeError("Failed to spawn required actors")
                 
+                # Spawn actors with validation and retry logic
+                if self.enbale_traffic:
+                    if not self._spawn_traffic():
+                        raise RuntimeError("Failed to spawn traffic actors")
+                
                 # Setup validation after all actors are ready
                 if self.validation_mode:
                     self._setup_validation()
@@ -295,6 +342,32 @@ class CarlaLaneDetection:
             
         except Exception as e:
             raise RuntimeError(f"Failed to setup synchronous mode: {e}")
+        
+    def _spawn_traffic(self):
+        """Spawn some traffic for object detection testing"""
+
+        if not self.enbale_traffic:
+            return False
+    
+        blueprint_library = self.world.get_blueprint_library()
+        spawn_points = self.world.get_map().get_spawn_points()
+        
+        # Spawn a few vehicles at random locations
+        vehicle_blueprints = blueprint_library.filter('vehicle.*')
+        number_of_traffic = self.carla_config['traffic']['number_of_vehicles']
+        
+        for i in range(number_of_traffic):  # Spawn 5 vehicles
+            # Pick random vehicle type and spawn point
+            vehicle_bp = random.choice(vehicle_blueprints)
+            spawn_point = random.choice(spawn_points)
+            
+            try:
+                vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
+                vehicle.set_autopilot(True)  # Make them drive around
+                self.actors.append(vehicle)
+            except:
+                continue  # Skip if spawn fails
+        return True
 
     def _spawn_actors(self):
         """
@@ -455,9 +528,9 @@ class CarlaLaneDetection:
                 expected_interval = 1.0 / self.FPS
                 
                 # 50% tolerance for network/processing variance
-                if frame_interval > expected_interval * 1.5:
-                    self.frame_timeout_count += 1
-                    print(f"WARNING: Frame drop detected: {frame_interval:.3f}s (expected {expected_interval:.3f}s)")
+                # if frame_interval > expected_interval * 1.5:
+                #     self.frame_timeout_count += 1
+                #     print(f"WARNING: Frame drop detected: {frame_interval:.3f}s (expected {expected_interval:.3f}s)")
             
             self.last_frame_time = current_time
             
@@ -465,9 +538,7 @@ class CarlaLaneDetection:
             frame = self._convert_carla_image(image)
             
             # Lane detection with timing for performance monitoring
-            detection_start = time.time()
-            result, gray, edges, masked, left_coords, right_coords = self.lane_detector.process_image(frame)
-            detection_time = (time.time() - detection_start) * 1000
+            result, gray, edges, masked, left_coords, right_coords, detected_objects, timing_metrics = self.lane_detector.process_image(frame)
             
             # Validation only when needed to minimize performance impact
             if self.validation_mode and hasattr(self, 'lane_validator'):
@@ -484,12 +555,10 @@ class CarlaLaneDetection:
                 'gray': gray,
                 'edges': edges,
                 'masked': masked,
-                'detection_time': detection_time,
-                'callback_time': callback_time
             }
             
             # Performance monitoring for system health
-            self.performance_monitor.add_frame_data(detection_time, callback_time)
+            self.performance_monitor.add_frame_data(callback_time, timing_metrics)
             
             # Reset timeout counter on successful frame
             self.frame_timeout_count = 0
@@ -566,7 +635,7 @@ class CarlaLaneDetection:
             masked = self.current_frame['masked']
             
             # Result is already in RGB format from lane detector
-            surface = pygame.surfarray.make_surface(np.rot90(result))
+            surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(result)))
             self.display.blit(surface, (0, 0))
 
             # Record video if enabled (convert back to BGR for OpenCV)
@@ -579,7 +648,7 @@ class CarlaLaneDetection:
                 debug_img = cv2.resize(img, (160, 120))
                 if len(debug_img.shape) == 2:  # Convert grayscale to RGB for display
                     debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)
-                debug_surface = pygame.surfarray.make_surface(np.rot90(debug_img))
+                debug_surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(debug_img)))
                 self.display.blit(debug_surface, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
                 
                 # Add text label for clarity
@@ -591,7 +660,7 @@ class CarlaLaneDetection:
                 draw_debug("Edges", edges, 160)
                 draw_debug("Masked", masked, 300)
 
-            pygame.display.flip()  # Use flip() instead of update() for better performance
+            pygame.display.update()  # Use flip() instead of update() for better performance
             
         except Exception as e:
             print(f"Display update error: {e}")
@@ -769,7 +838,7 @@ class CarlaLaneDetection:
                     # Performance monitoring every 5 seconds
                     frame_count += 1
                     if time.time() - last_performance_log > 5.0:
-                        self._log_system_performance(frame_count)
+                        # self._log_system_performance(frame_count)
                         last_performance_log = time.time()
                     
                     # Maintain target framerate
