@@ -1,6 +1,6 @@
 import pygame
 import numpy as np
-import sys, glob, os
+import sys, os
 import cv2
 # from simple_lane_detection import SimpleLaneDetector
 from enhanced_perception import EnhancedPerception
@@ -94,20 +94,27 @@ class PerformanceMonitor:
     def _log_performance_summary(self):
         """Log function to print performance stats"""
 
-        print("=" * 40)  # Make it wider for better readability
-        print("Object Detection Performance")
-        print("=" * 40)
+        timing_components = {
+        "Lane Detection": self.lane_detection_times,
+        "Object Detection": self.object_detection_times, 
+        "Total Perception": self.total_perception_times,
+        "Callback Overhead": self.callback_times
+        }
 
-        for item in list(zip(self.lane_detection_times, self.object_detection_times, self.total_perception_times, self.callback_times)):
-            performance_stats = self.get_performance_stats(item)
+        print("=" * 50)
+        print(f"Enhanced Perception Performance ({len(self.total_perception_times)} frames):")
 
-            print(f"Average detection time: {performance_stats.average_detection_time:.1f}ms best/worst ({performance_stats.min_detection_time:.1f}ms - {performance_stats.max_detection_time:.1f}ms)", end='\n')
-            print(f"Current FPS estimate: {performance_stats.current_fps_est}")
-            real_time_budget = (1/self.FPS) * 1000
-            if performance_stats.real_time_performance:
-                print(f"Real-time performance: < {real_time_budget:.1f}ms budget")
-            else:
-                print(f"Behind real-time: > {real_time_budget:.1f}ms budget")
+        for name, timing_data in timing_components.items():
+            if timing_data:
+                performance_stats = self.get_performance_stats(timing_data)
+                print(f"  {name:18s}: avg={performance_stats.average_detection_time:.1f}ms  ({performance_stats.min_detection_time:.1f}-{performance_stats.max_detection_time:.1f}ms)")
+        
+        # Real-time status
+        if self.total_perception_times:
+            real_time_budget = 1000 / self.FPS
+            avg_perception = np.mean(self.total_perception_times)
+            status = "GOOD" if avg_perception < real_time_budget else " SLOW"
+            print(f"  Real-time Status: {status} (target: <{real_time_budget:.1f}ms)")
 
 
 class CarlaLaneDetection:
@@ -147,7 +154,7 @@ class CarlaLaneDetection:
         self.camera = None
         self.camera_config = self.carla_config['camera']
         self.vehicle = None
-        self.enbale_traffic = self.carla_config['traffic']['enbale_traffic']
+        self.enable_traffic = self.carla_config['traffic']['enable_traffic']
         self.running = False
         self.actors = []
         self.current_frame = None
@@ -158,7 +165,7 @@ class CarlaLaneDetection:
 
         # Detection, validation and control
         # self.lane_detector = SimpleLaneDetector(self.config)
-        self.lane_detector = EnhancedPerception(self.config)
+        self.perception = EnhancedPerception(self.config)
         self.validation_mode = self.carla_config['validation_mode']
         self.lane_validator = None
         
@@ -286,7 +293,7 @@ class CarlaLaneDetection:
                     raise RuntimeError("Failed to spawn required actors")
                 
                 # Spawn actors with validation and retry logic
-                if self.enbale_traffic:
+                if self.enable_traffic:
                     if not self._spawn_traffic():
                         raise RuntimeError("Failed to spawn traffic actors")
                 
@@ -346,7 +353,7 @@ class CarlaLaneDetection:
     def _spawn_traffic(self):
         """Spawn some traffic for object detection testing"""
 
-        if not self.enbale_traffic:
+        if not self.enable_traffic:
             return False
     
         blueprint_library = self.world.get_blueprint_library()
@@ -485,7 +492,7 @@ class CarlaLaneDetection:
         """Setup validation pipeline with error handling"""
         try:
             self.lane_validator = LaneValidator(
-                self.config, self.world, self.camera, self.vehicle, self.lane_detector
+                self.config, self.world, self.camera, self.vehicle, self.perception.lane_detector
             )
             print("Validation pipeline initialized")
         except Exception as e:
@@ -538,7 +545,7 @@ class CarlaLaneDetection:
             frame = self._convert_carla_image(image)
             
             # Lane detection with timing for performance monitoring
-            result, gray, edges, masked, left_coords, right_coords, detected_objects, timing_metrics = self.lane_detector.process_image(frame)
+            result, gray, edges, masked, left_coords, right_coords, detected_objects, timing_metrics = self.perception.process_image(frame)
             
             # Validation only when needed to minimize performance impact
             if self.validation_mode and hasattr(self, 'lane_validator'):
@@ -660,7 +667,7 @@ class CarlaLaneDetection:
                 draw_debug("Edges", edges, 160)
                 draw_debug("Masked", masked, 300)
 
-            pygame.display.update()  # Use flip() instead of update() for better performance
+            pygame.display.flip()  # Use flip() instead of update() for better performance
             
         except Exception as e:
             print(f"Display update error: {e}")
@@ -769,8 +776,8 @@ class CarlaLaneDetection:
         print(f"Debug Overlays: {'ON' if self.enable_debugs else 'OFF'}")
         
         # Show GPU acceleration status if available
-        if hasattr(self.lane_detector, 'use_gpu'):
-            gpu_status = "ENABLED" if self.lane_detector.use_gpu else "DISABLED"
+        if hasattr(self.perception, 'use_gpu'):
+            gpu_status = "ENABLED" if self.perception.use_gpu else "DISABLED"
             print(f"GPU Acceleration: {gpu_status}")
         
         print("\nControls:")
@@ -778,20 +785,6 @@ class CarlaLaneDetection:
         print("  SPACE - Toggle autopilot on/off")
         print("  W/A/S/D - Manual control (when autopilot off)")
         print("=" * 50)
-
-    def _log_system_performance(self, frame_count):
-        """Log comprehensive system performance information"""
-        uptime = time.time() - self.performance_monitor.start_time
-        avg_fps = frame_count / uptime if uptime > 0 else 0
-        
-        print(f"System Status - Uptime: {uptime:.1f}s, Frames: {frame_count}, Avg FPS: {avg_fps:.1f}")
-        
-        # Log error rates to detect system degradation
-        if self.frame_timeout_count > 0:
-            print(f"  Frame timeouts: {self.frame_timeout_count}")
-        
-        if self.error_count > 0:
-            print(f"  Recent errors: {self.error_count}")
 
     def run(self):
         """
@@ -813,8 +806,6 @@ class CarlaLaneDetection:
             self._print_startup_info()
             
             clock = pygame.time.Clock()
-            frame_count = 0
-            last_performance_log = time.time()
             
             while self.running:
                 try:
@@ -834,12 +825,6 @@ class CarlaLaneDetection:
                     
                     # Update display with error protection
                     self.update_display()
-                    
-                    # Performance monitoring every 5 seconds
-                    frame_count += 1
-                    if time.time() - last_performance_log > 5.0:
-                        # self._log_system_performance(frame_count)
-                        last_performance_log = time.time()
                     
                     # Maintain target framerate
                     clock.tick(self.FPS)

@@ -8,8 +8,8 @@ carla:
   enable_recording: False
   enable_debugs: False
   pygame_display: # It's better to match image_resize resolution
-    display_width: 1280 
-    display_height: 720
+    display_width: 960 
+    display_height: 640
   camera:
     image_width: 1280
     image_height: 720
@@ -19,7 +19,7 @@ carla:
       rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
   traffic:
     number_of_vehicles: 50
-    enbale_traffic: True
+    enable_traffic: True
 
 lane_detector:
   smoothing_factor: 0.9
@@ -65,4 +65,4 @@ validation:
 object_detection:
   model_size: '11s'
   confidence_threshold: 0.5
-  nms_threshold: 0.3
+  nms_threshold: 0.5

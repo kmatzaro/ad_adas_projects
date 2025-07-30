@@ -83,7 +83,7 @@ class LaneValidator:
         logger = logging.getLogger(f"{__name__}.LaneValidator")
         if not logger.handlers:
             handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
@@ -392,7 +392,7 @@ class LaneValidator:
         Returns:
             Annotated image with overlays
         """
-        overlay_image = image.copy()
+        overlay_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         
         try:
             # Draw ground truth points (yellow circles)
