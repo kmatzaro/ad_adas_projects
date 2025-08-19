@@ -5,7 +5,7 @@
 ---
 
 ## Demo
-![Lane Detection Demo](perception_ad/demo/lane_detection_demo.gif)
+![Lane Detection Demo](perception_ad/demo/perception_demo.gif)
 
 ## 🚀 Key Features
 
@@ -44,8 +44,8 @@ All parameters live in a single `config.yaml` - camera settings, detection thres
 
 ### **Real-time Capabilities**
 - **Lane Detection:** ~10ms (classical CV pipeline)
-- **Object Detection:** ~15ms (YOLO11n/s on RTX GPUs)
-- **Total Perception:** <25ms (under 33ms real-time budget for target 30 FPS)
+- **Object Detection:** ~20ms (YOLO11s on GTX 1660 Super GPU)
+- **Total Perception:** <30ms (under 33ms real-time budget for target 30 FPS)
 - **System FPS:** 30+ FPS sustained with full perception + visualization
 
 ### **Detection Capabilities**

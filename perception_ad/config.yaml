@@ -8,8 +8,8 @@ carla:
   enable_recording: False
   enable_debugs: False
   pygame_display: # It's better to match image_resize resolution
-    display_width: 960 
-    display_height: 640
+    display_width: 1280 
+    display_height: 720
   camera:
     image_width: 1280
     image_height: 720
@@ -29,8 +29,8 @@ lane_detector:
   display_center_lane_line : True
   enable_gpu: False # CPU turns out to be faster in processing single frames with low res.
   image_resize:
-    image_width: 960
-    image_height: 640
+    image_width: 1280
+    image_height: 720
   gaussian_blur:
     kernel_size_x: 3
     kernel_size_y: 3
@@ -63,6 +63,6 @@ validation:
   draw_det_vs_gt: True
 
 object_detection:
-  model_size: '11s'
+  model_size: '11s' # 11n does not yield good results I recommend to use at least 11s
   confidence_threshold: 0.5
-  nms_threshold: 0.5
+  nms_threshold: 0.6
