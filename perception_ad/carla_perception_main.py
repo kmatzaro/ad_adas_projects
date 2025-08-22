@@ -14,6 +14,7 @@ from collections import deque
 import carla
 from dataclasses import dataclass
 from typing import Optional, Dict
+from vehicles.vehicle_manager import VehicleManager, TrafficManager
 
 
 @dataclass
@@ -154,6 +155,7 @@ class CarlaLaneDetection:
         self.camera = None
         self.camera_config = self.carla_config['camera']
         self.vehicle = None
+        self.vehicle_manager = None
         self.enable_traffic = self.carla_config['traffic']['enable_traffic']
         self.running = False
         self.actors = []
@@ -289,12 +291,15 @@ class CarlaLaneDetection:
                 self._setup_synchronous_mode()
                 
                 # Spawn actors with validation and retry logic
-                if not self._spawn_actors():
+                self.vehicle_manager = VehicleManager(self.world)
+                vehicles_spawned, self.vehicle = self.vehicle_manager.spawn_vehicle()
+                if not vehicles_spawned:
                     raise RuntimeError("Failed to spawn required actors")
                 
                 # Spawn actors with validation and retry logic
                 if self.enable_traffic:
-                    if not self._spawn_traffic():
+                    self.traffic_manager = TrafficManager(self.world)
+                    if not self.traffic_manager.spawn_traffic():
                         raise RuntimeError("Failed to spawn traffic actors")
                 
                 # Setup validation after all actors are ready
@@ -307,7 +312,8 @@ class CarlaLaneDetection:
                 
             except Exception as e:
                 print(f"Setup attempt {attempt + 1} failed: {e}")
-                self._cleanup_partial_setup()
+                self.vehicle_manager._cleanup_partial_setup()
+                self.traffic_manager._cleanup_partial_setup()
                 
                 if attempt < self.max_retries - 1:
                     print("Retrying in 5 seconds...")
@@ -317,6 +323,13 @@ class CarlaLaneDetection:
                     return False
         
         return False
+    
+    def cleanup_partial_setup(self):
+        """Coordinate cleanup across all managers"""
+        print("Cleaning up partial setup...")
+        self.vehicle_manager.cleanup()   # Each manager cleans itself
+        self.traffic_manager.cleanup()   
+        self.camera_manager.cleanup()
 
     def _setup_synchronous_mode(self):
         """
@@ -349,101 +362,6 @@ class CarlaLaneDetection:
             
         except Exception as e:
             raise RuntimeError(f"Failed to setup synchronous mode: {e}")
-        
-    def _spawn_traffic(self):
-        """Spawn some traffic for object detection testing"""
-
-        if not self.enable_traffic:
-            return False
-    
-        blueprint_library = self.world.get_blueprint_library()
-        spawn_points = self.world.get_map().get_spawn_points()
-        
-        # Spawn a few vehicles at random locations
-        vehicle_blueprints = blueprint_library.filter('vehicle.*')
-        number_of_traffic = self.carla_config['traffic']['number_of_vehicles']
-        
-        for i in range(number_of_traffic):  # Spawn 5 vehicles
-            # Pick random vehicle type and spawn point
-            vehicle_bp = random.choice(vehicle_blueprints)
-            spawn_point = random.choice(spawn_points)
-            
-            try:
-                vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
-                vehicle.set_autopilot(True)  # Make them drive around
-                self.actors.append(vehicle)
-            except:
-                continue  # Skip if spawn fails
-        return True
-
-    def _spawn_actors(self):
-        """
-        Actor spawning with validation and retry logic.
-        
-        Actor spawning can fail due to:
-        - Collision with existing actors
-        - Invalid spawn points
-        - Server issues
-        Systems need robust spawn logic with multiple attempts.
-        """
-        try:
-            blueprint_library = self.world.get_blueprint_library()
-            spawn_points = self.world.get_map().get_spawn_points()
-            
-            if not spawn_points:
-                raise RuntimeError("No spawn points available on map")
-            
-            print(f"Found {len(spawn_points)} spawn points")
-            
-            # Spawn vehicle with collision checking and retry logic
-            vehicle_bp = blueprint_library.filter('vehicle.tesla.model3')[0]
-            
-            for attempt in range(5):  # Try multiple spawn points
-                try:
-                    spawn_point = random.choice(spawn_points)
-                    
-                    # Check if spawn point is clear before attempting spawn
-                    if self._is_spawn_point_clear(spawn_point):
-                        self.vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
-                        self.actors.append(self.vehicle)
-                        print(f"Vehicle spawned successfully at attempt {attempt + 1}")
-                        break
-                        
-                except RuntimeError as e:
-                    if "collision" in str(e).lower() and attempt < 4:
-                        continue  # Try different spawn point on collision
-                    else:
-                        raise e
-            else:
-                raise RuntimeError("Could not find clear spawn point for vehicle")
-            
-            # Spawn camera after vehicle is ready
-            self._spawn_camera()
-            
-            print(f"All {len(self.actors)} actors spawned successfully")
-            return True
-            
-        except Exception as e:
-            print(f"Actor spawning failed: {e}")
-            return False
-
-    def _is_spawn_point_clear(self, spawn_point, radius=2.0):
-        """
-        Check if spawn point is clear of other vehicles.
-        
-        Prevents collision errors during spawn by checking occupancy first.
-        Much better than try/except on spawn because it's proactive.
-        """
-        location = spawn_point.location
-        
-        # Get all vehicles in the world to check for conflicts
-        vehicles = self.world.get_actors().filter('vehicle.*')
-        
-        for vehicle in vehicles:
-            if vehicle.get_location().distance(location) < radius:
-                return False
-        
-        return True
 
     def _spawn_camera(self):
         """
@@ -499,25 +417,6 @@ class CarlaLaneDetection:
             print(f"Validation setup failed: {e}")
             self.validation_mode = False
 
-    def _cleanup_partial_setup(self):
-        """
-        Clean up partially completed setup attempts.
-        
-        If setup fails partway through, we need to clean up what was created
-        to prevent resource leaks and conflicts with retry attempts.
-        """
-        try:
-            if hasattr(self, 'actors') and self.actors:
-                for actor in self.actors:
-                    try:
-                        if actor.is_alive:
-                            actor.destroy()
-                    except:
-                        pass  # Don't let cleanup failures stop retry attempts
-                self.actors.clear()
-        except:
-            pass  # Cleanup should never crash
-
     def _safe_camera_callback(self, image):
         """
         Enhanced camera callback with performance monitoring and error handling.
@@ -527,19 +426,6 @@ class CarlaLaneDetection:
         """
         try:
             callback_start = time.time()
-            
-            # Check for frame drops to detect performance issues
-            current_time = time.time()
-            if hasattr(self, 'last_frame_time'):
-                frame_interval = current_time - self.last_frame_time
-                expected_interval = 1.0 / self.FPS
-                
-                # 50% tolerance for network/processing variance
-                # if frame_interval > expected_interval * 1.5:
-                #     self.frame_timeout_count += 1
-                #     print(f"WARNING: Frame drop detected: {frame_interval:.3f}s (expected {expected_interval:.3f}s)")
-            
-            self.last_frame_time = current_time
             
             # Convert CARLA image efficiently with pre-allocated buffer
             frame = self._convert_carla_image(image)
@@ -759,12 +645,6 @@ class CarlaLaneDetection:
         )
         self.vehicle.apply_control(control)
 
-    def _setup_autopilot(self):
-        """Setup autopilot with user information"""
-        self.autopilot_enabled = True
-        self.vehicle.set_autopilot(self.autopilot_enabled)
-        print("Autopilot enabled - vehicle will drive automatically")
-
     def _print_startup_info(self):
         """Print comprehensive startup information for user"""
         print("CARLA Lane Detection System Started")
@@ -802,7 +682,6 @@ class CarlaLaneDetection:
         
         try:
             self.running = True
-            self._setup_autopilot()
             self._print_startup_info()
             
             clock = pygame.time.Clock()
@@ -865,7 +744,8 @@ class CarlaLaneDetection:
         cleanup_steps = [
             ("Disabling autopilot", self._cleanup_autopilot),
             ("Stopping camera", self._cleanup_camera),
-            ("Destroying actors", self._cleanup_actors),
+            ("Destroying vehicle actors", self.vehicle_manager._cleanup_actors),
+            ("Destroying traffic actors", self.traffic_manager._cleanup_actors),
             ("Closing video recording", self._cleanup_recording),
             ("Restoring async mode", self._cleanup_carla_settings),
             ("Closing pygame", self._cleanup_pygame),
@@ -900,20 +780,20 @@ class CarlaLaneDetection:
             self.camera.stop()
             time.sleep(0.1)  # Let camera stop properly before destroy
 
-    def _cleanup_actors(self):
-        """Enhanced actor cleanup with proper sequencing"""
-        if not hasattr(self, 'actors'):
-            return
+    # def _cleanup_actors(self):
+    #     """Enhanced actor cleanup with proper sequencing"""
+    #     if not hasattr(self, 'actors'):
+    #         return
         
-        # Destroy all actors
-        for actor in self.actors:
-            try:
-                if actor.is_alive:
-                    actor.destroy()
-            except:
-                pass  # Don't let individual destroy failure stop cleanup
+    #     # Destroy all actors
+    #     for actor in self.actors:
+    #         try:
+    #             if actor.is_alive:
+    #                 actor.destroy()
+    #         except:
+    #             pass  # Don't let individual destroy failure stop cleanup
         
-        self.actors.clear()
+    #     self.actors.clear()
 
     def _cleanup_recording(self):
         """Safe video recording cleanup"""
