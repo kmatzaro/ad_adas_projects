@@ -1,7 +1,7 @@
 import random
 import carla
 from actor_utils import cleanup_vehicles
-from typing import Optional, Tuple
+from typing import Optional
 
 
 class VehicleSpawner():
@@ -18,7 +18,7 @@ class VehicleSpawner():
         self._spawn_points = self.world.get_map().get_spawn_points()
         self._vehicle_blueprints = self._blueprint_library.filter('vehicle.*')
 
-    def spawn_vehicle(self, vehicle_type) -> Optional[carla.Actor]:
+    def spawn_vehicle(self, vehicle_type: str):
         """
         Actual vehicle spawn
         """
@@ -26,11 +26,12 @@ class VehicleSpawner():
             if not self._spawn_points:
                 raise RuntimeError("No spawn points available on map")
             
-            print(f"Found {len(self._spawn_points)} spawn points")
+            # print(f"Found {len(self._spawn_points)} spawn points")
             
             # Spawn vehicle with collision checking and retry logic
             if vehicle_type != 'random':
-                vehicle_bp = self._vehicle_blueprints.find(f'vehicle.{vehicle_type}')[0]
+                vehicle_name = f"vehicle.{vehicle_type}"
+                vehicle_bp = self._vehicle_blueprints.find(vehicle_name)
             else:
                 vehicle_bp = random.choice(self._vehicle_blueprints)
             
@@ -41,7 +42,7 @@ class VehicleSpawner():
                     # Check if spawn point is clear before attempting spawn
                     if self._is_spawn_point_clear(spawn_point):
                         vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
-                        print(f"Vehicle spawned successfully at attempt {attempt + 1}")
+                        # print(f"Vehicle spawned successfully at attempt {attempt + 1}")
                         break
                         
                 except RuntimeError as e:
@@ -90,28 +91,34 @@ class VehicleManager():
     def spawn_vehicle(self):
         self.vehicle = self.vehicle_spawner.spawn_vehicle(self.vehicle_type)
         if self.vehicle:
-            self.enable_autopilot()
+            self._enable_autopilot()
             self.vehicle_actors.append(self.vehicle)
 
-    def enable_autopilot(self):
-        if self.vehicle and self.vehicle.is_alive:
+    def _enable_autopilot(self):
+        if self.vehicle:
             self.vehicle.set_autopilot(True)
             self.autopilot_enabled = True
     
-    def disable_autopilot(self):
-        if self.vehicle and self.vehicle.is_alive:
+    def _disable_autopilot(self):
+        if self.vehicle:
             self.vehicle.set_autopilot(False)
             self.autopilot_enabled = False
     
     def toggle_autopilot(self):
         if self.autopilot_enabled:
-            self.disable_autopilot()
+            self._disable_autopilot()
         else:
-            self.enable_autopilot()
+            self._enable_autopilot()
+
+    def _cleanup_autopilot(self):
+        """Disable autopilot safely"""
+        if self.vehicle and self.vehicle.is_alive:
+            self.vehicle.set_autopilot(False)
     
     def cleanup(self):
-        """Clean up whatever this manager created"""
+        """Cleanup all vehicles"""
         if self.vehicle_actors:
+            self._cleanup_autopilot()
             cleanup_vehicles(self.vehicle_actors)
 
 class TrafficManager:
@@ -120,7 +127,7 @@ class TrafficManager:
     spawn in bulk
     """
 
-    def __init__(self, world, number_of_traffic_vehicles):
+    def __init__(self, world, number_of_traffic_vehicles: int):
         self.vehicle_spawner = VehicleSpawner(world)
         self.number_of_traffic_vehicles = number_of_traffic_vehicles
         self.traffic_actors = []
@@ -137,6 +144,6 @@ class TrafficManager:
                 self.traffic_actors.append(traffic_vehicle)
     
     def cleanup(self):
-        """Clean up whatever this manager created"""
+        """Cleanup all traffic vehicles"""
         if self.traffic_actors:
             cleanup_vehicles(self.traffic_actors)

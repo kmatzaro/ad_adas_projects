@@ -7,19 +7,7 @@ carla:
   validation_mode: False
   enable_recording: False
   enable_debugs: False
-  pygame_display: # It's better to match image_resize resolution
-    display_width: 1280 
-    display_height: 720
-  camera:
-    image_width: 1280
-    image_height: 720
-    fov: 90
-    transform:
-      location: { x: 1.5, y: 0.0, z: 1.3 }
-      rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
-  traffic:
-    number_of_vehicles: 50
-    enable_traffic: True
+  enable_traffic: True
 
 lane_detector:
   smoothing_factor: 0.9
@@ -66,3 +54,46 @@ object_detection:
   model_size: '11s' # 11n does not yield good results I recommend to use at least 11s
   confidence_threshold: 0.5
   nms_threshold: 0.6
+
+sensors:
+  front_camera:
+    transform:
+        location: { x: 1.5, y: 0.0, z: 1.3 }
+        rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
+    image_size_x: 1280
+    image_size_y: 720
+    fov: 90
+    bloom_intensity: 0.675
+    fstop: 1.4
+    iso: 100.0
+    gamma: 2.2
+    lens_flare_intensity: 0.1
+    sensor_tick: 1.0
+    shutter_speed: 200.0
+    
+  lidar:
+    transform:
+      location: { x: 0.0, y: 0.0, z: 1.5 }
+      rotation: { pitch: 0.0, yaw: 0.0, roll: 0.0 }
+    channels: 32
+    range: 100
+    points_per_second: 56000
+    rotation_frequency: 10.0
+    upper_fov: 10.0
+    lower_fov: -30.0
+    horizontal_fov: 360.0
+    atmosphere_attenuation_rate: 0.004
+    dropoff_general_rate: 0.45
+    dropoff_intensity_limit: 0.8
+    dropoff_zero_intensity: 0.4
+    sensor_tick: 0.0
+    noise_stddev: 0.0
+
+traffic:
+  number_of_vehicles: 50
+
+display_manager:
+  pygame_display: # It's better to match image_resize resolution
+    display_width: 1280 
+    display_height: 720
+  grid_size: [1, 2]
