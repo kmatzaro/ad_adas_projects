@@ -15,13 +15,14 @@ class DisplayManager:
             config['pygame_display']['display_width'], 
             config['pygame_display']['display_height']
         )
+        self.pygame_display_width, self.pygame_display_height = self.pygame_display
         self.display = pygame.display.set_mode(self.pygame_display)
         pygame.display.set_caption("CARLA Synchronous Client")
 
         self.grid_size = config['grid_size']
         self.grid_rows, self.grid_cols = self.grid_size
-        self.cell_width = self.pygame_display[0] // self.grid_cols
-        self.cell_height = self.pygame_display[1] // self.grid_rows
+        self.cell_width = self.pygame_display_width // self.grid_cols
+        self.cell_height = self.pygame_display_height // self.grid_rows
 
         self.sensor_grid = {} # sensor_name -> (grid_row, grid_col)
         self.sensor_images = {}  # sensor_name -> pygame.Surface
@@ -50,6 +51,18 @@ class DisplayManager:
                 if self.render_enabled():
                     surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(resize_display_image)))
                     self.display.blit(surface, self.get_display_offset(grid_pos))
+    
+    # Create debug miniatures for development and debugging
+    def draw_debug(self, title, img, y_offset):
+        debug_img = cv2.resize(img, (160, 120))
+        if len(debug_img.shape) == 2:  # Convert grayscale to RGB for display
+            debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)
+        debug_surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(debug_img)))
+        self.display.blit(debug_surface, (self.pygame_display_width-200, y_offset))
+        
+        # Add text label for clarity
+        text = self.font.render(title, True, (255, 255, 255))
+        self.display.blit(text, (self.pygame_display_width-200, y_offset))
     
     def _scale_image_to_cell(self, image, target_cell_size):
         """Scale image to fit cell while maintaining aspect ratio"""
@@ -95,8 +108,11 @@ class DisplayManager:
     def get_sensor_list(self) -> List:
         return list(self.sensor_grid.keys())
 
-    def get_display_size(self) -> Tuple[int, int]:
+    def get_full_display_size(self) -> Tuple[int, int]:
         return self.pygame_display
+    
+    def get_cell_display_size(self) -> Tuple[int, int]:
+        return [self.cell_width, self.cell_height]
     
     def get_grid_size(self) -> Tuple[int, int]:
         return self.grid_size

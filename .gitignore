@@ -2,7 +2,6 @@ perception_ad/*.pt
 perception_ad/**data
 perception_ad/recordings
 perception_ad/validation_*
-perception_ad/gpu_*
 perception_ad/demo/*_linkedin.gif
 
 !perception_ad/validation_20250720_124216

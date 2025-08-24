@@ -10,15 +10,14 @@ carla:
   enable_traffic: True
 
 lane_detector:
-  smoothing_factor: 0.9
-  max_missing: 20
   display_lane_overlay: True
   display_lane_lines : True
   display_center_lane_line : True
-  enable_gpu: False # CPU turns out to be faster in processing single frames with low res.
   image_resize:
     image_width: 1280
     image_height: 720
+  smoothing_factor: 0.9
+  max_missing: 20
   gaussian_blur:
     kernel_size_x: 3
     kernel_size_y: 3
@@ -73,12 +72,12 @@ sensors:
     
   lidar:
     transform:
-      location: { x: 0.0, y: 0.0, z: 1.5 }
+      location: { x: 0.0, y: 0.0, z: 2.4 }
       rotation: { pitch: 0.0, yaw: 0.0, roll: 0.0 }
-    channels: 32
+    channels: 64
     range: 100
-    points_per_second: 56000
-    rotation_frequency: 10.0
+    points_per_second: 250000
+    rotation_frequency: 20.0
     upper_fov: 10.0
     lower_fov: -30.0
     horizontal_fov: 360.0

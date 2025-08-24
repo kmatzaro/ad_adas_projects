@@ -2,12 +2,12 @@ import pygame
 import numpy as np
 import sys, os
 import cv2
-from enhanced_perception import EnhancedPerception
-from validation_lane_detection import LaneValidator
 import datetime
 import yaml
 import time
 import carla
+from enhanced_perception import EnhancedPerception
+from validation_lane_detection import LaneValidator
 from vehicles.vehicle_manager import VehicleManager, TrafficManager
 from display_manager import DisplayManager
 from sensors.sensor_manager import SensorManager
@@ -47,7 +47,6 @@ class CarlaLaneDetection:
         self.client = None
         self.world = None
         self.running = False
-        self.actors = []
         self.current_frame = None
 
         # On/Off enablers
@@ -59,6 +58,11 @@ class CarlaLaneDetection:
         # Detection, validation and control
         self.perception = EnhancedPerception(self.config)
         self.lane_validator = None
+
+        # Various managers init
+        self.vehicle_manager = None
+        self.traffic_manager = None
+        self.sensor_manager  = None
         
         if self.enable_recording:
             self.init_video_writer()
@@ -122,7 +126,7 @@ class CarlaLaneDetection:
             
             output_name = f"{output_dir}/lane_detection_{timestamp}.mp4"
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.video_out = cv2.VideoWriter(output_name, fourcc, self.FPS, self.pygame_display)
+            self.video_out = cv2.VideoWriter(output_name, fourcc, self.FPS, self.display_manager.pygame_display)
             
             if not self.video_out.isOpened():
                 raise RuntimeError("Failed to initialize video writer")
@@ -161,9 +165,9 @@ class CarlaLaneDetection:
             self.display_manager.add_sensor("front_camera", [0,0])
             self.camera.listen(lambda image: self._safe_camera_callback(image))
 
-            # self.lidar = self.sensor_manager.init_sensor("LiDAR", self.config['sensors']['lidar'], self.vehicle)
-            # self.display_manager.add_sensor("lidar", [0,1])
-            # self.lidar.listen()
+            self.lidar = self.sensor_manager.init_sensor("LiDAR", self.config['sensors']['lidar'], self.vehicle)
+            self.display_manager.add_sensor("lidar", [0,1])
+            self.lidar.listen(lambda data: self._safe_lidar_callback(data))
 
             # Setup validation after all actors are ready
             if self.validation_mode:
@@ -318,6 +322,9 @@ class CarlaLaneDetection:
                 'edges': edges,
                 'masked': masked,
             }
+
+            # Update display manager's camera image
+            self.display_manager.update_sensor_image('front_camera', result)
             
             # Performance monitoring for system health
             self.performance_monitor.add_frame_data(callback_time, timing_metrics)
@@ -336,6 +343,30 @@ class CarlaLaneDetection:
                 print("Too many camera errors, attempting restart...")
                 self.sensor_manager.restart_sensor(self.camera, "RGBCamera", self.config['sensors']['front_camera'], self.vehicle)
                 self.frame_timeout_count = 0
+        
+    def _safe_lidar_callback(self, image):
+        """Process LiDAR point cloud"""
+        try:
+            disp_size = self.display_manager.get_cell_display_size()
+            lidar_range = 2.0*self.config['sensors']['lidar']['range']
+
+            points = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
+            points = np.reshape(points, (int(points.shape[0] / 4), 4))
+            lidar_data = np.array(points[:, :2])
+            lidar_data *= min(disp_size) / lidar_range
+            lidar_data += (0.5 * disp_size[0], 0.5 * disp_size[1])
+            lidar_data = np.fabs(lidar_data)  # pylint: disable=E1111
+            lidar_data = lidar_data.astype(np.int32)
+            lidar_data = np.reshape(lidar_data, (-1, 2))
+            lidar_img_size = (disp_size[1], disp_size[0], 3)
+            lidar_img = np.zeros((lidar_img_size), dtype=np.uint8)
+
+            lidar_img[tuple(lidar_data.T[::-1])] = (255, 255, 255)
+
+            self.display_manager.update_sensor_image('lidar', lidar_img)
+        
+        except Exception as e:
+            print(f"Lidar callback error: {e}")
 
     def _convert_carla_image(self, image):
         """
@@ -369,31 +400,18 @@ class CarlaLaneDetection:
             edges = self.current_frame['edges']
             masked = self.current_frame['masked']
             
-            # Result is already in RGB format from lane detector
-            self.display_manager.update_sensor_image('front_camera', result)
+            # Render on pygame
             self.display_manager.render()
 
             # Record video if enabled (convert back to BGR for OpenCV)
             if self.enable_recording and hasattr(self, 'video_out') and self.video_out is not None:
                 bgr_frame = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
                 self.video_out.write(bgr_frame)
-
-            # Create debug miniatures for development and debugging
-            def draw_debug(title, img, y_offset):
-                debug_img = cv2.resize(img, (160, 120))
-                if len(debug_img.shape) == 2:  # Convert grayscale to RGB for display
-                    debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)
-                debug_surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(debug_img)))
-                self.display.blit(debug_surface, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
-                
-                # Add text label for clarity
-                text = self.font.render(title, True, (255, 255, 255))
-                self.display.blit(text, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
                 
             if self.enable_debugs:
-                draw_debug("Gray", gray, 20)
-                draw_debug("Edges", edges, 160)
-                draw_debug("Masked", masked, 300)
+                self.display_manager.draw_debug("Gray", gray, 20)
+                self.display_manager.draw_debug("Edges", edges, 160)
+                self.display_manager.draw_debug("Masked", masked, 300)
 
             pygame.display.flip()  # Use flip() instead of update() for better performance
             
@@ -460,7 +478,7 @@ class CarlaLaneDetection:
                 elif event.key == pygame.K_SPACE:
                     # Toggle autopilot with user feedback
                     self.vehicle_manager.toggle_autopilot()
-                    status = "enabled" if self.vehicle_manager.autopilot_enabled else "disabled"
+                    status = "enabled" if self.vehicle_manager.autopilot_enabled is True else "disabled"
                     print(f"Autopilot {status}")
 
     def _handle_manual_control(self):
@@ -540,7 +558,7 @@ class CarlaLaneDetection:
                     self._handle_pygame_events()
                     
                     # Manual control if autopilot disabled
-                    if not self.vehicle_manager.autopilot_enabled:
+                    if self.vehicle_manager.autopilot_enabled is False:
                         self._handle_manual_control()
                     
                     # Update display with error protection
