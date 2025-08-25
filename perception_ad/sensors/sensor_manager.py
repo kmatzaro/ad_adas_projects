@@ -34,7 +34,10 @@ class SensorManager:
             
             for key in sensor_config:
                 if key != 'transform':
-                    sensor_bp.set_attribute(key, str(sensor_config[key]))
+                    if key !='sensor_tick':
+                        sensor_bp.set_attribute(key, str(sensor_config[key]))
+                    else:
+                        sensor_bp.set_attribute(key, str(1.0/sensor_config[key]))
             
             # Attach camera to vehicle with proper transform
             sensor_transform = carla.Transform(

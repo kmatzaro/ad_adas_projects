@@ -67,7 +67,7 @@ sensors:
     iso: 100.0
     gamma: 2.2
     lens_flare_intensity: 0.1
-    sensor_tick: 1.0
+    sensor_tick: 30 # Value in FPS
     shutter_speed: 200.0
     
   lidar:
@@ -85,7 +85,7 @@ sensors:
     dropoff_general_rate: 0.45
     dropoff_intensity_limit: 0.8
     dropoff_zero_intensity: 0.4
-    sensor_tick: 0.0
+    sensor_tick: 30 # Value in FPS
     noise_stddev: 0.0
 
 traffic:

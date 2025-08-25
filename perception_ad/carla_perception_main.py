@@ -160,11 +160,13 @@ class CarlaLaneDetection:
             
             # Spawn other sensors attached to vehicle
             self.sensor_manager = SensorManager(self.world)
-            self.config['sensors']['front_camera']['sensor_tick'] = self.config['sensors']['front_camera']['sensor_tick'] / self.FPS 
+
+            # Front Camera
             self.camera = self.sensor_manager.init_sensor("RGBCamera", self.config['sensors']['front_camera'], self.vehicle)
             self.display_manager.add_sensor("front_camera", [0,0])
             self.camera.listen(lambda image: self._safe_camera_callback(image))
 
+            # LiDAR
             self.lidar = self.sensor_manager.init_sensor("LiDAR", self.config['sensors']['lidar'], self.vehicle)
             self.display_manager.add_sensor("lidar", [0,1])
             self.lidar.listen(lambda data: self._safe_lidar_callback(data))

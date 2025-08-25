@@ -4,9 +4,7 @@ from simple_lane_detection import SimpleLaneDetector
 from object_detection import ObjectDetector, DetectedObject
 from typing import List, Dict, Tuple, Optional
 import logging
-from collections import deque
 import time
-from dataclasses import dataclass
 
 class EnhancedPerception():
     """
