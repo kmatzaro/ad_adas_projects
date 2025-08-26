@@ -5,7 +5,7 @@
 ---
 
 ## Demo
-![Lane Detection Demo](perception_data/demo/perception_demo.gif)
+![Lane Detection Demo](perception_ad/perception_data/demo/perception_demo.gif)
 
 ## 🚀 Key Features
 
