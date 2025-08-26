@@ -1,12 +1,10 @@
 import cv2
 import numpy as np
-from simple_lane_detection import SimpleLaneDetector
-from object_detection import ObjectDetector, DetectedObject
+from perception.simple_lane_detection import SimpleLaneDetector
+from perception.object_detection import ObjectDetector, DetectedObject
 from typing import List, Dict, Tuple, Optional
 import logging
-from collections import deque
 import time
-from dataclasses import dataclass
 
 class EnhancedPerception():
     """

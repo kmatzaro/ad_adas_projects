@@ -2,119 +2,16 @@ import pygame
 import numpy as np
 import sys, os
 import cv2
-# from simple_lane_detection import SimpleLaneDetector
-from enhanced_perception import EnhancedPerception
-# from gpu_simple_lane_detector import GPUEnhancedLaneDetector as SimpleLaneDetector
-from validation_lane_detection import LaneValidator
-import random
 import datetime
 import yaml
 import time
-from collections import deque
 import carla
-from dataclasses import dataclass
-from typing import Optional, Dict
-
-
-@dataclass
-class TimingMetrics:
-    average_detection_time: float
-    min_detection_time: float
-    max_detection_time: float
-    current_fps_est: int
-    real_time_performance: Optional[bool]
-
-
-class PerformanceMonitor:
-    """
-    Performance monitoring for CARLA pipeline
-    
-    In real-time systems, you must monitor performance to detect:
-    - Processing bottlenecks
-    - Frame drops
-    - Memory leaks
-    - System degradation over time
-    """
-    
-    def __init__(self, config, window_size=1000):
-        # Rolling window prevents memory growth and gives recent performance
-        self.window_size = window_size
-        self.callback_times = deque(maxlen=window_size)
-        self.lane_detection_times = deque(maxlen=window_size)
-        self.object_detection_times = deque(maxlen=window_size)
-        self.total_perception_times = deque(maxlen=window_size)
-        self.frame_count = 0
-        self.FPS = config['carla']['FPS']
-        self.start_time = time.time()
-        
-    def add_frame_data(self, callback_time, perception_time: Dict):
-        """Add performance data for current frame"""
-        self.callback_times.append(callback_time)
-        self.lane_detection_times.append(perception_time['lane_detection_time_ms'])
-        self.object_detection_times.append(perception_time['object_detection_time_ms'])
-        self.total_perception_times.append(perception_time['total_end_time'])
-        self.frame_count += 1
-        
-        # Log every 60 frames = 1 second at 60fps, provides regular feedback
-        if self.frame_count % 60 == 0:
-            self._log_performance_summary()
-       
-    def get_performance_stats(self, detection_times) -> TimingMetrics:
-        """Statistics for performance tracking"""
-
-        if not detection_times:
-            return TimingMetrics(0, 0, 0, 0, False)
-        
-        detection_times_list = list(detection_times)
-
-        # Average detection time
-        avg_detection_time_ms = np.average(detection_times_list)
-
-        # Min/max detection time
-        min_detection_time = np.min(detection_times_list)
-        max_detection_time = np.max(detection_times_list)
-
-        # FPS estimate
-        fps_estimate = 1 / avg_detection_time_ms * 1000
-
-        # Real time performance
-        if avg_detection_time_ms <= 1/self.FPS * 1000:
-            real_time_performance = True
-        else:
-            real_time_performance = False
-
-        return TimingMetrics(
-            average_detection_time = avg_detection_time_ms,
-            min_detection_time = min_detection_time,
-            max_detection_time = max_detection_time,
-            current_fps_est = int(fps_estimate),
-            real_time_performance = real_time_performance
-        )
-
-    def _log_performance_summary(self):
-        """Log function to print performance stats"""
-
-        timing_components = {
-        "Lane Detection": self.lane_detection_times,
-        "Object Detection": self.object_detection_times, 
-        "Total Perception": self.total_perception_times,
-        "Callback Overhead": self.callback_times
-        }
-
-        print("=" * 50)
-        print(f"Enhanced Perception Performance ({len(self.total_perception_times)} frames):")
-
-        for name, timing_data in timing_components.items():
-            if timing_data:
-                performance_stats = self.get_performance_stats(timing_data)
-                print(f"  {name:18s}: avg={performance_stats.average_detection_time:.1f}ms  ({performance_stats.min_detection_time:.1f}-{performance_stats.max_detection_time:.1f}ms)")
-        
-        # Real-time status
-        if self.total_perception_times:
-            real_time_budget = 1000 / self.FPS
-            avg_perception = np.mean(self.total_perception_times)
-            status = "GOOD" if avg_perception < real_time_budget else " SLOW"
-            print(f"  Real-time Status: {status} (target: <{real_time_budget:.1f}ms)")
+from perception.enhanced_perception import EnhancedPerception
+from perception.validation.validation_lane_detection import LaneValidator
+from actors.vehicles.vehicle_manager import VehicleManager, TrafficManager
+from display.display_manager import DisplayManager
+from actors.sensors.sensor_manager import SensorManager
+from performance.performace_metrics import PerformanceMonitor
 
 
 class CarlaLaneDetection:
@@ -144,32 +41,29 @@ class CarlaLaneDetection:
         
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor(config)
-        self.last_frame_time = time.time()
         
         # Attributes
         self.FPS = self.carla_config['FPS']
-        self.enable_debugs = self.carla_config['enable_debugs']
         self.client = None
         self.world = None
-        self.camera = None
-        self.camera_config = self.carla_config['camera']
-        self.vehicle = None
-        self.enable_traffic = self.carla_config['traffic']['enable_traffic']
         self.running = False
-        self.actors = []
         self.current_frame = None
-        self.pygame_display = (
-            self.carla_config['pygame_display']['display_width'], 
-            self.carla_config['pygame_display']['display_height']
-        )
+
+        # On/Off enablers
+        self.enable_traffic = self.carla_config['enable_traffic']
+        self.enable_debugs = self.carla_config['enable_debugs']
+        self.enable_recording = self.carla_config['enable_recording']
+        self.validation_mode = self.carla_config['validation_mode']
 
         # Detection, validation and control
-        # self.lane_detector = SimpleLaneDetector(self.config)
         self.perception = EnhancedPerception(self.config)
-        self.validation_mode = self.carla_config['validation_mode']
         self.lane_validator = None
+
+        # Various managers init
+        self.vehicle_manager = None
+        self.traffic_manager = None
+        self.sensor_manager  = None
         
-        self.enable_recording = self.carla_config['enable_recording']
         if self.enable_recording:
             self.init_video_writer()
         
@@ -182,16 +76,13 @@ class CarlaLaneDetection:
         # Validate config with clear errors
         self._validate_configuration()
         
-        # Pygame and display settings
-        pygame.init()
-        self.font = pygame.font.SysFont(pygame.font.get_default_font(), 16)
-        self.display = pygame.display.set_mode(self.pygame_display)
-        pygame.display.set_caption("CARLA Synchronous Client")
+        # Initiate display manager
+        self.display_manager = DisplayManager(config['display_manager'])
         
         # Pre-allocate image buffer for performance
         self._image_buffer = None
         
-        print("CARLA Lane Detection initialized successfully")
+        print("CARLA initialized successfully")
 
     def _validate_configuration(self):
         """
@@ -212,7 +103,7 @@ class CarlaLaneDetection:
                 raise ValueError(f"Missing required config section: {section}")
         
         # Check required CARLA keys
-        required_carla_keys = ['host', 'port', 'town', 'FPS', 'camera']
+        required_carla_keys = ['host', 'port', 'town', 'FPS']
         for key in required_carla_keys:
             if key not in self.carla_config:
                 raise ValueError(f"Missing required CARLA config key: {key}")
@@ -222,26 +113,20 @@ class CarlaLaneDetection:
         if not (1 <= fps <= 60):
             raise ValueError(f"FPS must be between 1-60, got {fps}")
         
-        # Validate camera configuration
-        camera_keys = ['image_width', 'image_height', 'fov', 'transform']
-        for key in camera_keys:
-            if key not in self.camera_config:
-                raise ValueError(f"Missing camera config key: {key}")
-        
         print("Configuration validation successful")
 
     def init_video_writer(self):
         """Initialize video writer with error handling"""
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = "recordings"
+            output_dir = "../perception_data/recordings"
             
             # Create directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
             
             output_name = f"{output_dir}/lane_detection_{timestamp}.mp4"
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.video_out = cv2.VideoWriter(output_name, fourcc, self.FPS, self.pygame_display)
+            self.video_out = cv2.VideoWriter(output_name, fourcc, self.FPS, self.display_manager.pygame_display)
             
             if not self.video_out.isOpened():
                 raise RuntimeError("Failed to initialize video writer")
@@ -251,6 +136,51 @@ class CarlaLaneDetection:
         except Exception as e:
             print(f"Video writer initialization failed: {e}")
             self.enable_recording = False
+    
+    def _spawn_actors(self):
+        """
+        Actor spawning with validation and retry logic.
+        
+        Actor spawning can fail due to:
+        - Collision with existing actors
+        - Invalid spawn points
+        - Server issues
+        Systems need robust spawn logic with multiple attempts.
+        """
+        try:
+            # Spawn vehicle
+            self.vehicle_manager = VehicleManager(self.world)
+            self.vehicle_manager.spawn_vehicle()
+            self.vehicle = self.vehicle_manager.vehicle
+            
+            # Spawn traffic
+            if self.enable_traffic:
+                self.traffic_manager = TrafficManager(self.world, self.config['traffic']['number_of_vehicles'])
+                self.traffic_manager.spawn_traffic()
+            
+            # Spawn other sensors attached to vehicle
+            self.sensor_manager = SensorManager(self.world)
+
+            # Front Camera
+            self.camera = self.sensor_manager.init_sensor("RGBCamera", self.config['sensors']['front_camera'], self.vehicle)
+            self.display_manager.add_sensor("front_camera", [0,0])
+            self.camera.listen(lambda image: self._safe_camera_callback(image))
+
+            # LiDAR
+            self.lidar = self.sensor_manager.init_sensor("LiDAR", self.config['sensors']['lidar'], self.vehicle)
+            self.display_manager.add_sensor("lidar", [0,1])
+            self.lidar.listen(lambda data: self._safe_lidar_callback(data))
+
+            # Setup validation after all actors are ready
+            if self.validation_mode:
+                self._setup_validation()
+            
+            print(f"All actors spawned successfully")
+            return True
+            
+        except Exception as e:
+            print(f"Actor spawning failed: {e}")
+            return False
 
     def carla_setup(self):
         """
@@ -288,18 +218,9 @@ class CarlaLaneDetection:
                 # Configure synchronous mode with validation
                 self._setup_synchronous_mode()
                 
-                # Spawn actors with validation and retry logic
+                # Spawn actors
                 if not self._spawn_actors():
-                    raise RuntimeError("Failed to spawn required actors")
-                
-                # Spawn actors with validation and retry logic
-                if self.enable_traffic:
-                    if not self._spawn_traffic():
-                        raise RuntimeError("Failed to spawn traffic actors")
-                
-                # Setup validation after all actors are ready
-                if self.validation_mode:
-                    self._setup_validation()
+                    raise RuntimeError("Actor spawning failed!")
                 
                 self.connection_stable = True
                 print("CARLA setup completed successfully")
@@ -317,6 +238,16 @@ class CarlaLaneDetection:
                     return False
         
         return False
+    
+    def _cleanup_partial_setup(self):
+        """Coordinate cleanup across all managers"""
+        print("Cleaning up partial setup...")
+        if self.vehicle_manager:
+            self.vehicle_manager.cleanup()   
+        if self.traffic_manager:
+            self.traffic_manager.cleanup()   
+        if self.sensor_manager:
+            self.sensor_manager.cleanup()
 
     def _setup_synchronous_mode(self):
         """
@@ -349,144 +280,6 @@ class CarlaLaneDetection:
             
         except Exception as e:
             raise RuntimeError(f"Failed to setup synchronous mode: {e}")
-        
-    def _spawn_traffic(self):
-        """Spawn some traffic for object detection testing"""
-
-        if not self.enable_traffic:
-            return False
-    
-        blueprint_library = self.world.get_blueprint_library()
-        spawn_points = self.world.get_map().get_spawn_points()
-        
-        # Spawn a few vehicles at random locations
-        vehicle_blueprints = blueprint_library.filter('vehicle.*')
-        number_of_traffic = self.carla_config['traffic']['number_of_vehicles']
-        
-        for i in range(number_of_traffic):  # Spawn 5 vehicles
-            # Pick random vehicle type and spawn point
-            vehicle_bp = random.choice(vehicle_blueprints)
-            spawn_point = random.choice(spawn_points)
-            
-            try:
-                vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
-                vehicle.set_autopilot(True)  # Make them drive around
-                self.actors.append(vehicle)
-            except:
-                continue  # Skip if spawn fails
-        return True
-
-    def _spawn_actors(self):
-        """
-        Actor spawning with validation and retry logic.
-        
-        Actor spawning can fail due to:
-        - Collision with existing actors
-        - Invalid spawn points
-        - Server issues
-        Systems need robust spawn logic with multiple attempts.
-        """
-        try:
-            blueprint_library = self.world.get_blueprint_library()
-            spawn_points = self.world.get_map().get_spawn_points()
-            
-            if not spawn_points:
-                raise RuntimeError("No spawn points available on map")
-            
-            print(f"Found {len(spawn_points)} spawn points")
-            
-            # Spawn vehicle with collision checking and retry logic
-            vehicle_bp = blueprint_library.filter('vehicle.tesla.model3')[0]
-            
-            for attempt in range(5):  # Try multiple spawn points
-                try:
-                    spawn_point = random.choice(spawn_points)
-                    
-                    # Check if spawn point is clear before attempting spawn
-                    if self._is_spawn_point_clear(spawn_point):
-                        self.vehicle = self.world.spawn_actor(vehicle_bp, spawn_point)
-                        self.actors.append(self.vehicle)
-                        print(f"Vehicle spawned successfully at attempt {attempt + 1}")
-                        break
-                        
-                except RuntimeError as e:
-                    if "collision" in str(e).lower() and attempt < 4:
-                        continue  # Try different spawn point on collision
-                    else:
-                        raise e
-            else:
-                raise RuntimeError("Could not find clear spawn point for vehicle")
-            
-            # Spawn camera after vehicle is ready
-            self._spawn_camera()
-            
-            print(f"All {len(self.actors)} actors spawned successfully")
-            return True
-            
-        except Exception as e:
-            print(f"Actor spawning failed: {e}")
-            return False
-
-    def _is_spawn_point_clear(self, spawn_point, radius=2.0):
-        """
-        Check if spawn point is clear of other vehicles.
-        
-        Prevents collision errors during spawn by checking occupancy first.
-        Much better than try/except on spawn because it's proactive.
-        """
-        location = spawn_point.location
-        
-        # Get all vehicles in the world to check for conflicts
-        vehicles = self.world.get_actors().filter('vehicle.*')
-        
-        for vehicle in vehicles:
-            if vehicle.get_location().distance(location) < radius:
-                return False
-        
-        return True
-
-    def _spawn_camera(self):
-        """
-        Spawn camera with enhanced configuration and validation.
-        
-        Camera is critical component - needs robust setup with proper configuration
-        and validation to ensure image quality and performance.
-        """
-        try:
-            blueprint_library = self.world.get_blueprint_library()
-            camera_bp = blueprint_library.find('sensor.camera.rgb')
-            
-            # Enhanced camera configuration for better image quality
-            camera_config = self.camera_config
-            camera_bp.set_attribute('image_size_x', str(camera_config['image_width']))
-            camera_bp.set_attribute('image_size_y', str(camera_config['image_height']))
-            camera_bp.set_attribute('fov', str(camera_config['fov']))
-            camera_bp.set_attribute('sensor_tick', str(1.0 / self.FPS))  # Match FPS
-            
-            # Enable post-processing for better image quality
-            camera_bp.set_attribute('enable_postprocess_effects', 'true')
-            camera_bp.set_attribute('gamma', '2.2')
-            
-            # Attach camera to vehicle with proper transform
-            camera_transform = carla.Transform(
-                carla.Location(**camera_config['transform']['location']),
-                carla.Rotation(**camera_config['transform']['rotation'])
-            )
-            
-            self.camera = self.world.spawn_actor(
-                camera_bp, 
-                camera_transform, 
-                attach_to=self.vehicle
-            )
-            self.actors.append(self.camera)
-            
-            # Setup camera callback with error handling wrapper
-            self.camera.listen(lambda image: self._safe_camera_callback(image))
-            
-            print("Camera configured and attached successfully")
-            
-        except Exception as e:
-            raise RuntimeError(f"Camera setup failed: {e}")
 
     def _setup_validation(self):
         """Setup validation pipeline with error handling"""
@@ -499,25 +292,6 @@ class CarlaLaneDetection:
             print(f"Validation setup failed: {e}")
             self.validation_mode = False
 
-    def _cleanup_partial_setup(self):
-        """
-        Clean up partially completed setup attempts.
-        
-        If setup fails partway through, we need to clean up what was created
-        to prevent resource leaks and conflicts with retry attempts.
-        """
-        try:
-            if hasattr(self, 'actors') and self.actors:
-                for actor in self.actors:
-                    try:
-                        if actor.is_alive:
-                            actor.destroy()
-                    except:
-                        pass  # Don't let cleanup failures stop retry attempts
-                self.actors.clear()
-        except:
-            pass  # Cleanup should never crash
-
     def _safe_camera_callback(self, image):
         """
         Enhanced camera callback with performance monitoring and error handling.
@@ -527,19 +301,6 @@ class CarlaLaneDetection:
         """
         try:
             callback_start = time.time()
-            
-            # Check for frame drops to detect performance issues
-            current_time = time.time()
-            if hasattr(self, 'last_frame_time'):
-                frame_interval = current_time - self.last_frame_time
-                expected_interval = 1.0 / self.FPS
-                
-                # 50% tolerance for network/processing variance
-                # if frame_interval > expected_interval * 1.5:
-                #     self.frame_timeout_count += 1
-                #     print(f"WARNING: Frame drop detected: {frame_interval:.3f}s (expected {expected_interval:.3f}s)")
-            
-            self.last_frame_time = current_time
             
             # Convert CARLA image efficiently with pre-allocated buffer
             frame = self._convert_carla_image(image)
@@ -563,6 +324,9 @@ class CarlaLaneDetection:
                 'edges': edges,
                 'masked': masked,
             }
+
+            # Update display manager's camera image
+            self.display_manager.update_sensor_image('front_camera', result)
             
             # Performance monitoring for system health
             self.performance_monitor.add_frame_data(callback_time, timing_metrics)
@@ -579,7 +343,32 @@ class CarlaLaneDetection:
             # Handle excessive errors with recovery attempt
             if self.frame_timeout_count > self.max_frame_timeouts:
                 print("Too many camera errors, attempting restart...")
-                self._restart_camera()
+                self.sensor_manager.restart_sensor(self.camera, "RGBCamera", self.config['sensors']['front_camera'], self.vehicle)
+                self.frame_timeout_count = 0
+        
+    def _safe_lidar_callback(self, image):
+        """Process LiDAR point cloud"""
+        try:
+            disp_size = self.display_manager.get_cell_display_size()
+            lidar_range = 2.0*self.config['sensors']['lidar']['range']
+
+            points = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
+            points = np.reshape(points, (int(points.shape[0] / 4), 4))
+            lidar_data = np.array(points[:, :2])
+            lidar_data *= min(disp_size) / lidar_range
+            lidar_data += (0.5 * disp_size[0], 0.5 * disp_size[1])
+            lidar_data = np.fabs(lidar_data)  # pylint: disable=E1111
+            lidar_data = lidar_data.astype(np.int32)
+            lidar_data = np.reshape(lidar_data, (-1, 2))
+            lidar_img_size = (disp_size[1], disp_size[0], 3)
+            lidar_img = np.zeros((lidar_img_size), dtype=np.uint8)
+
+            lidar_img[tuple(lidar_data.T[::-1])] = (255, 255, 255)
+
+            self.display_manager.update_sensor_image('lidar', lidar_img)
+        
+        except Exception as e:
+            print(f"Lidar callback error: {e}")
 
     def _convert_carla_image(self, image):
         """
@@ -602,34 +391,6 @@ class CarlaLaneDetection:
         
         return frame
 
-    def _restart_camera(self):
-        """
-        Attempt to restart camera on repeated failures.
-        
-        Sometimes cameras get into bad state and need restart.
-        This is a recovery mechanism for persistent issues.
-        """
-        try:
-            print("Attempting camera restart...")
-            
-            if self.camera and self.camera.is_alive:
-                self.camera.stop()
-                time.sleep(0.5)
-                self.camera.destroy()
-            
-            # Remove from actors list to prevent double cleanup
-            if self.camera in self.actors:
-                self.actors.remove(self.camera)
-            
-            # Spawn new camera
-            self._spawn_camera()
-            
-            self.frame_timeout_count = 0
-            print("Camera restart successful")
-            
-        except Exception as e:
-            print(f"Camera restart failed: {e}")
-
     def update_display(self):
         """Enhanced display update with error handling and performance info"""
         if self.current_frame is None:
@@ -641,31 +402,18 @@ class CarlaLaneDetection:
             edges = self.current_frame['edges']
             masked = self.current_frame['masked']
             
-            # Result is already in RGB format from lane detector
-            surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(result)))
-            self.display.blit(surface, (0, 0))
+            # Render on pygame
+            self.display_manager.render()
 
             # Record video if enabled (convert back to BGR for OpenCV)
             if self.enable_recording and hasattr(self, 'video_out') and self.video_out is not None:
                 bgr_frame = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
                 self.video_out.write(bgr_frame)
-
-            # Create debug miniatures for development and debugging
-            def draw_debug(title, img, y_offset):
-                debug_img = cv2.resize(img, (160, 120))
-                if len(debug_img.shape) == 2:  # Convert grayscale to RGB for display
-                    debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2RGB)
-                debug_surface = pygame.surfarray.make_surface(np.rot90(np.fliplr(debug_img)))
-                self.display.blit(debug_surface, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
-                
-                # Add text label for clarity
-                text = self.font.render(title, True, (255, 255, 255))
-                self.display.blit(text, (self.config['lane_detector']['image_resize']['image_width']-200, y_offset))
                 
             if self.enable_debugs:
-                draw_debug("Gray", gray, 20)
-                draw_debug("Edges", edges, 160)
-                draw_debug("Masked", masked, 300)
+                self.display_manager.draw_debug("Gray", gray, 20)
+                self.display_manager.draw_debug("Edges", edges, 160)
+                self.display_manager.draw_debug("Masked", masked, 300)
 
             pygame.display.flip()  # Use flip() instead of update() for better performance
             
@@ -731,9 +479,8 @@ class CarlaLaneDetection:
                     self.running = False
                 elif event.key == pygame.K_SPACE:
                     # Toggle autopilot with user feedback
-                    self.autopilot_enabled = not self.autopilot_enabled
-                    self.vehicle.set_autopilot(self.autopilot_enabled)
-                    status = "enabled" if self.autopilot_enabled else "disabled"
+                    self.vehicle_manager.toggle_autopilot()
+                    status = "enabled" if self.vehicle_manager.autopilot_enabled is True else "disabled"
                     print(f"Autopilot {status}")
 
     def _handle_manual_control(self):
@@ -759,18 +506,12 @@ class CarlaLaneDetection:
         )
         self.vehicle.apply_control(control)
 
-    def _setup_autopilot(self):
-        """Setup autopilot with user information"""
-        self.autopilot_enabled = True
-        self.vehicle.set_autopilot(self.autopilot_enabled)
-        print("Autopilot enabled - vehicle will drive automatically")
-
     def _print_startup_info(self):
         """Print comprehensive startup information for user"""
         print("CARLA Lane Detection System Started")
         print("=" * 50)
         print(f"Target FPS: {self.FPS}")
-        print(f"Image Resolution: {self.camera_config['image_width']}x{self.camera_config['image_height']}")
+        print(f"Image Resolution: {self.config['sensors']['front_camera']['image_size_x']}x{self.config['sensors']['front_camera']['image_size_y']}")
         print(f"Validation Mode: {'ON' if self.validation_mode else 'OFF'}")
         print(f"Recording: {'ON' if self.enable_recording else 'OFF'}")
         print(f"Debug Overlays: {'ON' if self.enable_debugs else 'OFF'}")
@@ -802,7 +543,6 @@ class CarlaLaneDetection:
         
         try:
             self.running = True
-            self._setup_autopilot()
             self._print_startup_info()
             
             clock = pygame.time.Clock()
@@ -820,7 +560,7 @@ class CarlaLaneDetection:
                     self._handle_pygame_events()
                     
                     # Manual control if autopilot disabled
-                    if not self.autopilot_enabled:
+                    if self.vehicle_manager.autopilot_enabled is False:
                         self._handle_manual_control()
                     
                     # Update display with error protection
@@ -863,12 +603,12 @@ class CarlaLaneDetection:
         
         # Define cleanup steps in proper order with error isolation
         cleanup_steps = [
-            ("Disabling autopilot", self._cleanup_autopilot),
-            ("Stopping camera", self._cleanup_camera),
-            ("Destroying actors", self._cleanup_actors),
+            ("Sensor cleanup", self.sensor_manager.cleanup),
+            ("Destroying vehicle actors", self.vehicle_manager.cleanup),
+            ("Destroying traffic actors", self.traffic_manager.cleanup),
             ("Closing video recording", self._cleanup_recording),
             ("Restoring async mode", self._cleanup_carla_settings),
-            ("Closing pygame", self._cleanup_pygame),
+            ("Closing pygame", self.display_manager.cleanup_pygame),
         ]
         
         for step_name, cleanup_func in cleanup_steps:
@@ -889,32 +629,6 @@ class CarlaLaneDetection:
         
         print("Cleanup completed successfully")
 
-    def _cleanup_autopilot(self):
-        """Disable autopilot safely"""
-        if self.vehicle and self.vehicle.is_alive:
-            self.vehicle.set_autopilot(False)
-
-    def _cleanup_camera(self):
-        """Safe camera cleanup with proper stop sequence"""
-        if self.camera and self.camera.is_alive:
-            self.camera.stop()
-            time.sleep(0.1)  # Let camera stop properly before destroy
-
-    def _cleanup_actors(self):
-        """Enhanced actor cleanup with proper sequencing"""
-        if not hasattr(self, 'actors'):
-            return
-        
-        # Destroy all actors
-        for actor in self.actors:
-            try:
-                if actor.is_alive:
-                    actor.destroy()
-            except:
-                pass  # Don't let individual destroy failure stop cleanup
-        
-        self.actors.clear()
-
     def _cleanup_recording(self):
         """Safe video recording cleanup"""
         if self.enable_recording and hasattr(self, 'video_out'):
@@ -934,18 +648,11 @@ class CarlaLaneDetection:
             except:
                 pass  # Don't crash cleanup on settings restore failure
 
-    def _cleanup_pygame(self):
-        """Safe pygame cleanup"""
-        try:
-            pygame.quit()
-        except:
-            pass
-
 
 if __name__ == '__main__':
     # Load config with error handling
     try:
-        with open("config.yaml") as f:
+        with open("./config.yaml") as f:
             cfg = yaml.safe_load(f)
     except FileNotFoundError:
         print("ERROR: config.yaml not found")

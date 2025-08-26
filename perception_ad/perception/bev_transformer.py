@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import logging
-from typing import Tuple, Optional, Union
+from typing import Union
 from dataclasses import dataclass
 
 @dataclass

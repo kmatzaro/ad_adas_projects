@@ -3,7 +3,7 @@ import cv2
 import logging
 from typing import Tuple, Optional, List, Dict
 from dataclasses import dataclass
-from bev_transformer import BEVTransformer
+from perception.bev_transformer import BEVTransformer
 
 @dataclass
 class LaneCoordinates:
