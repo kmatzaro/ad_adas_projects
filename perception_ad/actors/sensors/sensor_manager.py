@@ -1,6 +1,6 @@
 from typing import Dict
 import carla
-from actor_utils import cleanup_sensors
+from actors.actor_utils import cleanup_sensors
 import time
 
 class SensorManager:

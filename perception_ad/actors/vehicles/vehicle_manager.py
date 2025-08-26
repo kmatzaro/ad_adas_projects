@@ -1,7 +1,5 @@
 import random
-import carla
-from actor_utils import cleanup_vehicles
-from typing import Optional
+from actors.actor_utils import cleanup_vehicles
 
 
 class VehicleSpawner():

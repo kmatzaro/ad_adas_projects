@@ -6,12 +6,12 @@ import datetime
 import yaml
 import time
 import carla
-from enhanced_perception import EnhancedPerception
-from validation_lane_detection import LaneValidator
-from vehicles.vehicle_manager import VehicleManager, TrafficManager
-from display_manager import DisplayManager
-from sensors.sensor_manager import SensorManager
-from performace_metrics import PerformanceMonitor
+from perception.enhanced_perception import EnhancedPerception
+from perception.validation.validation_lane_detection import LaneValidator
+from actors.vehicles.vehicle_manager import VehicleManager, TrafficManager
+from display.display_manager import DisplayManager
+from actors.sensors.sensor_manager import SensorManager
+from performance.performace_metrics import PerformanceMonitor
 
 
 class CarlaLaneDetection:
@@ -119,7 +119,7 @@ class CarlaLaneDetection:
         """Initialize video writer with error handling"""
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = "recordings"
+            output_dir = "../perception_data/recordings"
             
             # Create directory if it doesn't exist
             os.makedirs(output_dir, exist_ok=True)
