@@ -4,8 +4,12 @@
 
 ---
 
-## Demo
+## Single camera Demo
 ![Lane Detection Demo](perception_ad/perception_data/demo/perception_demo.gif)
+
+## Multi Sensor Demo
+![Multi Sensor Demo](perception_ad/perception_data/demo/multi_sensor_demo.gif)
+
 
 ## 🚀 Key Features
 

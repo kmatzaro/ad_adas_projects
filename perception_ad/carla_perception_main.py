@@ -1,8 +1,6 @@
 import pygame
-import numpy as np
 import sys, os
 import cv2
-import datetime
 import yaml
 import time
 import carla
@@ -11,7 +9,6 @@ from perception.validation.validation_lane_detection import LaneValidator
 from actors.vehicles.vehicle_manager import VehicleManager, TrafficManager
 from display.display_manager import DisplayManager
 from actors.sensors.sensor_manager import SensorManager
-from performance.performace_metrics import PerformanceMonitor
 
 
 class CarlaLaneDetection:
@@ -34,20 +31,14 @@ class CarlaLaneDetection:
         # Connection management
         self.max_retries = 3  # Give server multiple chances to respond
         self.connection_timeout = 20.0  # Don't wait forever for unresponsive server
-        self.frame_timeout_count = 0
-        self.max_frame_timeouts = 10  # Too many timeouts indicate serious problems
         self.connection_stable = False
         self.error_count = 0
-        
-        # Performance monitoring
-        self.performance_monitor = PerformanceMonitor(config)
         
         # Attributes
         self.FPS = self.carla_config['FPS']
         self.client = None
         self.world = None
         self.running = False
-        self.current_frame = None
 
         # On/Off enablers
         self.enable_traffic = self.carla_config['enable_traffic']
@@ -64,23 +55,13 @@ class CarlaLaneDetection:
         self.traffic_manager = None
         self.sensor_manager  = None
         
-        if self.enable_recording:
-            self.init_video_writer()
-        
-        if self.validation_mode:
-            self.frame_id = 0
-            self.capture_times = 0.0
-            self.logs = []
-            self.sim_time = None
-
         # Validate config with clear errors
         self._validate_configuration()
         
         # Initiate display manager
         self.display_manager = DisplayManager(config['display_manager'])
-        
-        # Pre-allocate image buffer for performance
-        self._image_buffer = None
+        if self.enable_recording:
+            self.display_manager.init_video_writer()
         
         print("CARLA initialized successfully")
 
@@ -114,28 +95,6 @@ class CarlaLaneDetection:
             raise ValueError(f"FPS must be between 1-60, got {fps}")
         
         print("Configuration validation successful")
-
-    def init_video_writer(self):
-        """Initialize video writer with error handling"""
-        try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = "../perception_data/recordings"
-            
-            # Create directory if it doesn't exist
-            os.makedirs(output_dir, exist_ok=True)
-            
-            output_name = f"{output_dir}/lane_detection_{timestamp}.mp4"
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.video_out = cv2.VideoWriter(output_name, fourcc, self.FPS, self.display_manager.pygame_display)
-            
-            if not self.video_out.isOpened():
-                raise RuntimeError("Failed to initialize video writer")
-            
-            print(f"Video recording initialized: {output_name}")
-            
-        except Exception as e:
-            print(f"Video writer initialization failed: {e}")
-            self.enable_recording = False
     
     def _spawn_actors(self):
         """
@@ -159,17 +118,37 @@ class CarlaLaneDetection:
                 self.traffic_manager.spawn_traffic()
             
             # Spawn other sensors attached to vehicle
-            self.sensor_manager = SensorManager(self.world)
+            self.sensor_manager = SensorManager(self.world, self.display_manager, self.perception, self.config)
 
             # Front Camera
-            self.camera = self.sensor_manager.init_sensor("RGBCamera", self.config['sensors']['front_camera'], self.vehicle)
-            self.display_manager.add_sensor("front_camera", [0,0])
-            self.camera.listen(lambda image: self._safe_camera_callback(image))
+            front_camera_id =  "front_camera"
+            self.front_camera = self.sensor_manager.init_sensor("RGBCamera", self.vehicle, front_camera_id)
+            self.display_manager.add_sensor(front_camera_id, [0,0])
+            self.front_camera.listen(lambda image: self.sensor_manager.camera_callback(image, front_camera_id))
+
+            # Rear Camera
+            rear_camera_id = "rear_camera"
+            self.rear_camera = self.sensor_manager.init_sensor("RGBCamera", self.vehicle, rear_camera_id)
+            self.display_manager.add_sensor(rear_camera_id, [0,1])
+            self.rear_camera.listen(lambda image: self.sensor_manager.camera_callback(image, rear_camera_id))
+
+            # Camera sensors from here on will crash my system on a GTX 1660 Super
+            # # Left Camera
+            # left_camera_id = "left_camera"
+            # self.left_camera = self.sensor_manager.init_sensor("RGBCamera", self.vehicle, left_camera_id)
+            # self.display_manager.add_sensor(left_camera_id, [1,0])
+            # self.left_camera.listen(lambda image: self.sensor_manager.camera_callback(image, left_camera_id))
+
+            # # Right Camera
+            # right_camera_id = "right_camera"
+            # self.right_camera = self.sensor_manager.init_sensor("RGBCamera", self.vehicle, right_camera_id)
+            # self.display_manager.add_sensor(right_camera_id, [1,1])
+            # self.right_camera.listen(lambda image: self.sensor_manager.camera_callback(image, right_camera_id))
 
             # LiDAR
-            self.lidar = self.sensor_manager.init_sensor("LiDAR", self.config['sensors']['lidar'], self.vehicle)
-            self.display_manager.add_sensor("lidar", [0,1])
-            self.lidar.listen(lambda data: self._safe_lidar_callback(data))
+            self.lidar = self.sensor_manager.init_sensor("LiDAR", self.vehicle, "lidar")
+            self.display_manager.add_sensor("lidar", [1,0])
+            self.lidar.listen(lambda data: self.sensor_manager.lidar_callback(data))
 
             # Setup validation after all actors are ready
             if self.validation_mode:
@@ -292,128 +271,20 @@ class CarlaLaneDetection:
             print(f"Validation setup failed: {e}")
             self.validation_mode = False
 
-    def _safe_camera_callback(self, image):
-        """
-        Enhanced camera callback with performance monitoring and error handling.
-        
-        Camera callback is called at high frequency and any error here crashes
-        the entire pipeline. Need comprehensive error handling and performance monitoring.
-        """
-        try:
-            callback_start = time.time()
-            
-            # Convert CARLA image efficiently with pre-allocated buffer
-            frame = self._convert_carla_image(image)
-            
-            # Lane detection with timing for performance monitoring
-            result, gray, edges, masked, left_coords, right_coords, detected_objects, timing_metrics = self.perception.process_image(frame)
-            
-            # Validation only when needed to minimize performance impact
-            if self.validation_mode and hasattr(self, 'lane_validator'):
-                self.sim_time = self.world.get_snapshot().timestamp.elapsed_seconds
-                self.frame_id, self.capture_times, self.logs = self.lane_validator.run_validation(
-                    self.sim_time, result, self.frame_id, self.capture_times, 
-                    self.logs, left_coords, right_coords
-                )
-            
-            # Update display data for main thread
-            callback_time = (time.time() - callback_start) * 1000
-            self.current_frame = {
-                'result': result,
-                'gray': gray,
-                'edges': edges,
-                'masked': masked,
-            }
-
-            # Update display manager's camera image
-            self.display_manager.update_sensor_image('front_camera', result)
-            
-            # Performance monitoring for system health
-            self.performance_monitor.add_frame_data(callback_time, timing_metrics)
-            
-            # Reset timeout counter on successful frame
-            self.frame_timeout_count = 0
-            self.error_count = 0  # Reset error count on success
-            
-        except Exception as e:
-            print(f"Camera callback error: {e}")
-            self.frame_timeout_count += 1
-            self.error_count += 1
-            
-            # Handle excessive errors with recovery attempt
-            if self.frame_timeout_count > self.max_frame_timeouts:
-                print("Too many camera errors, attempting restart...")
-                self.sensor_manager.restart_sensor(self.camera, "RGBCamera", self.config['sensors']['front_camera'], self.vehicle)
-                self.frame_timeout_count = 0
-        
-    def _safe_lidar_callback(self, image):
-        """Process LiDAR point cloud"""
-        try:
-            disp_size = self.display_manager.get_cell_display_size()
-            lidar_range = 2.0*self.config['sensors']['lidar']['range']
-
-            points = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
-            points = np.reshape(points, (int(points.shape[0] / 4), 4))
-            lidar_data = np.array(points[:, :2])
-            lidar_data *= min(disp_size) / lidar_range
-            lidar_data += (0.5 * disp_size[0], 0.5 * disp_size[1])
-            lidar_data = np.fabs(lidar_data)  # pylint: disable=E1111
-            lidar_data = lidar_data.astype(np.int32)
-            lidar_data = np.reshape(lidar_data, (-1, 2))
-            lidar_img_size = (disp_size[1], disp_size[0], 3)
-            lidar_img = np.zeros((lidar_img_size), dtype=np.uint8)
-
-            lidar_img[tuple(lidar_data.T[::-1])] = (255, 255, 255)
-
-            self.display_manager.update_sensor_image('lidar', lidar_img)
-        
-        except Exception as e:
-            print(f"Lidar callback error: {e}")
-
-    def _convert_carla_image(self, image):
-        """
-        Optimized CARLA image conversion with pre-allocated buffer.
-        
-        Image conversion happens every frame at high frequency.
-        Pre-allocating buffer avoids memory allocation overhead.
-        """
-        # Pre-allocate buffer for performance (avoid allocation every frame)
-        if (self._image_buffer is None or 
-            self._image_buffer.shape != (image.height, image.width, 4)):
-            self._image_buffer = np.empty((image.height, image.width, 4), dtype=np.uint8)
-        
-        # Direct reshape is faster than multiple copies
-        array = np.frombuffer(image.raw_data, dtype=np.uint8)
-        array = array.reshape(self._image_buffer.shape)
-        
-        # Convert BGR to RGB and remove alpha channel
-        frame = cv2.cvtColor(array[:, :, :3], cv2.COLOR_BGR2RGB)
-        
-        return frame
-
     def update_display(self):
         """Enhanced display update with error handling and performance info"""
-        if self.current_frame is None:
-            return
-            
         try:
-            result = self.current_frame['result']
-            gray = self.current_frame['gray']
-            edges = self.current_frame['edges']
-            masked = self.current_frame['masked']
-            
             # Render on pygame
             self.display_manager.render()
 
             # Record video if enabled (convert back to BGR for OpenCV)
-            if self.enable_recording and hasattr(self, 'video_out') and self.video_out is not None:
-                bgr_frame = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
-                self.video_out.write(bgr_frame)
+            if self.enable_recording:
+                self.display_manager.record_pygame_display()
                 
             if self.enable_debugs:
-                self.display_manager.draw_debug("Gray", gray, 20)
-                self.display_manager.draw_debug("Edges", edges, 160)
-                self.display_manager.draw_debug("Masked", masked, 300)
+                pos = [20, 160, 300]
+                for i, (key, debug_image) in enumerate(self.display_manager.debug_images.items()):
+                    self.display_manager.draw_debug(key, debug_image, pos[i])
 
             pygame.display.flip()  # Use flip() instead of update() for better performance
             
@@ -606,7 +477,7 @@ class CarlaLaneDetection:
             ("Sensor cleanup", self.sensor_manager.cleanup),
             ("Destroying vehicle actors", self.vehicle_manager.cleanup),
             ("Destroying traffic actors", self.traffic_manager.cleanup),
-            ("Closing video recording", self._cleanup_recording),
+            ("Closing video recording", self.display_manager.cleanup_recording),
             ("Restoring async mode", self._cleanup_carla_settings),
             ("Closing pygame", self.display_manager.cleanup_pygame),
         ]
@@ -628,14 +499,6 @@ class CarlaLaneDetection:
             pass
         
         print("Cleanup completed successfully")
-
-    def _cleanup_recording(self):
-        """Safe video recording cleanup"""
-        if self.enable_recording and hasattr(self, 'video_out'):
-            try:
-                self.video_out.release()
-            except:
-                pass
 
     def _cleanup_carla_settings(self):
         """Restore CARLA to asynchronous mode"""

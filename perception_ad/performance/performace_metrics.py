@@ -28,25 +28,39 @@ class PerformanceMonitor:
     def __init__(self, config, window_size=1000):
         # Rolling window prevents memory growth and gives recent performance
         self.window_size = window_size
-        self.callback_times = deque(maxlen=window_size)
-        self.lane_detection_times = deque(maxlen=window_size)
-        self.object_detection_times = deque(maxlen=window_size)
-        self.total_perception_times = deque(maxlen=window_size)
-        self.frame_count = 0
         self.FPS = config['carla']['FPS']
-        self.start_time = time.time()
+
+        self.metrics = {
+            'front_camera': {
+                'front_camera_lane_detection_time_ms': deque(maxlen=window_size),
+                'front_camera_object_detection_time_ms': deque(maxlen=window_size),
+                'total_front_camera_time_ms': deque(maxlen=window_size),
+                'frame_count': 0
+            },
+            'rear_camera': {
+                'rear_camera_object_detection_time_ms': deque(maxlen=window_size),
+                'frame_count': 0
+            },
+            'left_camera': {
+                'left_camera_object_detection_time_ms': deque(maxlen=window_size),
+                'frame_count': 0
+            },
+            'right_camera': {
+                'right_camera_object_detection_time_ms': deque(maxlen=window_size),
+                'frame_count': 0
+            }
+        }
         
-    def add_frame_data(self, callback_time, perception_time: Dict):
+    def add_frame_data(self, camera_id, timing_metrics: Dict):
         """Add performance data for current frame"""
-        self.callback_times.append(callback_time)
-        self.lane_detection_times.append(perception_time['lane_detection_time_ms'])
-        self.object_detection_times.append(perception_time['object_detection_time_ms'])
-        self.total_perception_times.append(perception_time['total_end_time'])
-        self.frame_count += 1
+        if 'error' not in timing_metrics.keys():
+            for key, val in timing_metrics.items():
+                self.metrics[camera_id][key].append(val)
+                self.metrics[camera_id]['frame_count'] += 1
         
         # Log every 60 frames = 1 second at 60fps, provides regular feedback
-        if self.frame_count % 60 == 0:
-            self._log_performance_summary()
+        if self.metrics[camera_id]['frame_count'] % 60 == 0:
+            self._log_performance_summary(camera_id)
        
     def get_performance_stats(self, detection_times) -> TimingMetrics:
         """Statistics for performance tracking"""
@@ -80,27 +94,22 @@ class PerformanceMonitor:
             real_time_performance = real_time_performance
         )
 
-    def _log_performance_summary(self):
+    def _log_performance_summary(self, camera_id: str):
         """Log function to print performance stats"""
 
-        timing_components = {
-        "Lane Detection": self.lane_detection_times,
-        "Object Detection": self.object_detection_times, 
-        "Total Perception": self.total_perception_times,
-        "Callback Overhead": self.callback_times
-        }
-
         print("=" * 50)
-        print(f"Enhanced Perception Performance ({len(self.total_perception_times)} frames):")
+        print(f"Enhanced Perception Performance over ({self.window_size} frames) for {camera_id}:")
 
-        for name, timing_data in timing_components.items():
-            if timing_data:
+        for name, timing_data in self.metrics[camera_id].items():
+            if timing_data and name != 'frame_count':
                 performance_stats = self.get_performance_stats(timing_data)
                 print(f"  {name:18s}: avg={performance_stats.average_detection_time:.1f}ms  ({performance_stats.min_detection_time:.1f}-{performance_stats.max_detection_time:.1f}ms)")
-        
+                
         # Real-time status
-        if self.total_perception_times:
-            real_time_budget = 1000 / self.FPS
-            avg_perception = np.mean(self.total_perception_times)
-            status = "GOOD" if avg_perception < real_time_budget else " SLOW"
-            print(f"  Real-time Status: {status} (target: <{real_time_budget:.1f}ms)")
+        real_time_budget = 1000 / self.FPS
+        if camera_id == 'front_camera':
+            avg_perception = np.mean(self.metrics[camera_id][f"total_{camera_id}_time_ms"])
+        else:
+            avg_perception = np.mean(self.metrics[camera_id][f"{camera_id}_object_detection_time_ms"])
+        status = "GOOD" if avg_perception < real_time_budget else " SLOW"
+        print(f"  Real-time Status: {status} (target: <{real_time_budget:.1f}ms)")

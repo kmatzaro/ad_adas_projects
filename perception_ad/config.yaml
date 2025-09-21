@@ -5,7 +5,7 @@ carla:
   town: "Town03"
   FPS: 30
   validation_mode: False
-  enable_recording: False
+  enable_recording: True
   enable_debugs: False
   enable_traffic: True
 
@@ -14,8 +14,8 @@ lane_detector:
   display_lane_lines : True
   display_center_lane_line : True
   image_resize:
-    image_width: 1280
-    image_height: 720
+    image_width: 640
+    image_height: 480
   smoothing_factor: 0.9
   max_missing: 20
   gaussian_blur:
@@ -57,11 +57,56 @@ object_detection:
 sensors:
   front_camera:
     transform:
-        location: { x: 1.5, y: 0.0, z: 1.3 }
-        rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
+      location: { x: 1.5, y: 0.0, z: 1.3 }
+      rotation: { pitch: -8, yaw: 0.0, roll: 0.0 }
     image_size_x: 1280
     image_size_y: 720
     fov: 90
+    bloom_intensity: 0.675
+    fstop: 1.4
+    iso: 100.0
+    gamma: 2.2
+    lens_flare_intensity: 0.1
+    sensor_tick: 30 # Value in FPS
+    shutter_speed: 200.0
+
+  rear_camera:
+    transform:
+      location: { x: -2.5, y: 0.0, z: 1.3 }
+      rotation: { pitch: 0.0, yaw: 180, roll: 0.0 }
+    image_size_x: 640
+    image_size_y: 480
+    fov: 130
+    bloom_intensity: 0.675
+    fstop: 1.4
+    iso: 100.0
+    gamma: 2.2
+    lens_flare_intensity: 0.1
+    sensor_tick: 30 # Value in FPS
+    shutter_speed: 200.0
+  
+  left_camera:
+    transform:
+      location: { x: 1, y: -1.2, z: 1.5 }  # Slightly forward, left side, higher mount
+      rotation: { pitch: -5, yaw: -90.0, roll: 0.0 }  # Facing left, slight downward angle
+    fov: 120  # Wide coverage for blind spots and adjacent lanes
+    image_size_x: 640
+    image_size_y: 480
+    bloom_intensity: 0.675
+    fstop: 1.4
+    iso: 100.0
+    gamma: 2.2
+    lens_flare_intensity: 0.1
+    sensor_tick: 30 # Value in FPS
+    shutter_speed: 200.0
+  
+  right_camera:
+    transform:
+      location: { x: 1, y: 1.2, z: 1.5 }   # Slightly forward, right side, higher mount  
+      rotation: { pitch: -5, yaw: 90.0, roll: 0.0 }   # Facing right, slight downward angle
+    fov: 120  # Same wide coverage as left
+    image_size_x: 640
+    image_size_y: 480
     bloom_intensity: 0.675
     fstop: 1.4
     iso: 100.0
@@ -95,4 +140,4 @@ display_manager:
   pygame_display: # It's better to match image_resize resolution
     display_width: 1280 
     display_height: 720
-  grid_size: [1, 2]
+  grid_size: [2, 2]

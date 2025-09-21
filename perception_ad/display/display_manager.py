@@ -2,6 +2,8 @@ import pygame
 from typing import Dict, List, Tuple
 import cv2
 import numpy as np
+import datetime
+import os
 
 class DisplayManager:
     """
@@ -26,6 +28,9 @@ class DisplayManager:
 
         self.sensor_grid = {} # sensor_name -> (grid_row, grid_col)
         self.sensor_images = {}  # sensor_name -> pygame.Surface
+        self.debug_images = {} # Debug images
+
+        self.video_out = None
 
     def add_sensor(self, sensor_name, grid_position):
         """Register a sensor for display at specific grid position"""
@@ -41,6 +46,10 @@ class DisplayManager:
     def update_sensor_image(self, sensor_name, image):
         """Update the image for a specific sensor"""
         self.sensor_images[sensor_name] = image
+
+    def update_debug_images(self, debug_dict):
+        """Update the image for a specific sensor"""
+        self.debug_images.update(debug_dict)
 
     def render(self):
         """Render all sensor images to the grid"""
@@ -96,6 +105,55 @@ class DisplayManager:
         """Safe pygame cleanup"""
         try:
             pygame.quit()
+        except:
+            pass
+
+    def init_video_writer(self):
+        """Initialize video writer with error handling"""
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = "./perception_data/recordings"
+            
+            # Create directory if it doesn't exist
+            os.makedirs(output_dir, exist_ok=True)
+            
+            output_name = f"{output_dir}/multi_sensor_{timestamp}.mp4"
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.video_out = cv2.VideoWriter(output_name, fourcc, 30, self.pygame_display)
+            
+            if not self.video_out.isOpened():
+                raise RuntimeError("Failed to initialize video writer")
+            
+            print(f"Video recording initialized: {output_name}")
+            
+        except Exception as e:
+            print(f"Video writer initialization failed: {e}")
+    
+    def record_pygame_display(self):
+        """Capture the entire pygame display surface"""
+        if not self.video_out or not self.video_out.isOpened():
+            return
+            
+        try:
+            # Capture pygame surface as array
+            pygame_array = pygame.surfarray.array3d(self.display)
+            
+            # Convert pygame format (width, height, 3) to OpenCV format (height, width, 3)
+            frame = np.transpose(pygame_array, (1, 0, 2))
+            
+            # Convert RGB to BGR for OpenCV
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            
+            # Write frame
+            self.video_out.write(frame_bgr)
+        
+        except Exception as e:
+            print(f"Recording frame failed: {e}")
+    
+    def cleanup_recording(self):
+        """Safe video recording cleanup"""
+        try:
+            self.video_out.release()
         except:
             pass
 

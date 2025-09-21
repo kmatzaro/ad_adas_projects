@@ -2,9 +2,20 @@ import cv2
 import numpy as np
 from perception.simple_lane_detection import SimpleLaneDetector
 from perception.object_detection import ObjectDetector, DetectedObject
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Literal
 import logging
 import time
+from dataclasses import dataclass
+
+@dataclass
+class PerceptionResult:
+    camera_id: str                                 
+    processed_image: np.ndarray
+    detected_objects: List[DetectedObject] = None  # Only for object detection
+    lane_coords: Tuple = None                      # Only for lane detection  
+    debug_images: Dict[str, np.ndarray] = None     # Debug overlays
+    timing_metrics: Dict = None
+    timestamp: float = None
 
 class EnhancedPerception():
     """
@@ -69,45 +80,125 @@ class EnhancedPerception():
         
         if not self.object_detector.enabled:
             self.logger.warning("Object detection disabled - system will work with lanes only")
-
-    def process_image(self, image: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
-                                                        Optional[np.ndarray], Optional[np.ndarray], List[DetectedObject], Dict]:
-        """Process a single frame with integrated perception
+        
+    def process_lane_detection_camera(self, image, camera_id: str, timestamp) -> PerceptionResult:
+        """
+        Process a single frame with integrated lane detection
         
         Args:
             image: Input image
         
         Returns:
-            To be determined
+            PerceptionResult dataclass
         """
         try:
-            # Resize image once
-            resized_image = self.lane_detector._preprocess_image(image)
-
             # Lane detection system
             lane_start_time = time.time()
-            lane_result, gray, edges, masked, left_coords, right_coords = self.lane_detector.process_image(resized_image)
+            lane_result, gray, edges, masked, left_coords, right_coords = self.lane_detector.process_image(image)
+            lane_end_time = (time.time() - lane_start_time) * 1000 # For ms
+
+            return PerceptionResult(
+                camera_id = camera_id,
+                processed_image = lane_result,
+                lane_coords = (left_coords, right_coords),
+                debug_images = {"gray": gray, "edges": edges, "masked": masked},
+                timing_metrics = {f'{camera_id}_lane_detection_time_ms': lane_end_time},
+                timestamp = timestamp
+            )
+        
+        except Exception as e:
+            self.logger.error("Failed to process image in the lane detection system")
+            return PerceptionResult(
+                camera_id = camera_id,
+                processed_image = image,  # Return original image on failure
+                lane_coords = None,
+                debug_images = None,
+                timing_metrics = {f'{camera_id}_lane_detection_time_ms': 0, 'error': True},
+                timestamp = timestamp
+            )
+    
+    def process_object_detection_camera(self, image, camera_id: str, timestamp) -> PerceptionResult:
+        """
+        Process a single frame with integrated perception
+        
+        Args:
+            image: Input image
+        
+        Returns:
+            PerceptionResult dataclass
+        """
+        try:
+            # Object detection time
+            object_start_time = time.time()
+            detected_objects = self.object_detector.detect_objects(image)
+            object_end_time = (time.time() - object_start_time) * 1000 # For ms
+
+            # Draw objects on image
+            perception_image = self._draw_objects(detected_objects, image)
+
+            return PerceptionResult(
+                camera_id = camera_id,
+                processed_image = perception_image,
+                detected_objects = detected_objects,
+                timing_metrics= {f"{camera_id}_object_detection_time_ms": object_end_time},
+                timestamp = timestamp
+            )
+        
+        except Exception as e:
+            self.logger.error("Failed to process image in the perception system")
+            return PerceptionResult(
+                camera_id = camera_id,
+                processed_image = image,
+                timing_metrics= {f"{camera_id}_object_detection_time_ms": 0, 'error': True},
+                timestamp = timestamp
+            )
+        
+    def combined_camera_process(self, image, camera_id: str, timestamp) -> PerceptionResult:
+        """
+        Process a single frame with integrated lane detection and object detection
+        
+        Args:
+            image: Input image
+        
+        Returns:
+            PerceptionResult dataclass
+        """
+        try:
+            # Lane detection system
+            lane_start_time = time.time()
+            lane_result, gray, edges, masked, left_coords, right_coords = self.lane_detector.process_image(image)
             lane_end_time = (time.time() - lane_start_time) * 1000 # For ms
 
             # Object detection time
             object_start_time = time.time()
-            detected_objects = self.object_detector.detect_objects(resized_image)
+            detected_objects = self.object_detector.detect_objects(image)
             object_end_time = (time.time() - object_start_time) * 1000 # For ms
 
             # Draw objects on image
             perception_image = self._draw_objects(detected_objects, lane_result)
 
-            timing_metrics = {
-                'lane_detection_time_ms': lane_end_time,
-                'object_detection_time_ms': object_end_time,
-                'total_end_time': lane_end_time + object_end_time
-            }
-
-            return perception_image, gray, edges, masked, left_coords, right_coords, detected_objects, timing_metrics
-
+            return PerceptionResult(
+                camera_id = camera_id,
+                processed_image = perception_image,
+                detected_objects = detected_objects,
+                lane_coords = (left_coords, right_coords),
+                debug_images = {"gray": gray, "edges": edges, "masked": masked},
+                timing_metrics = {f'{camera_id}_lane_detection_time_ms': lane_end_time, f"{camera_id}_object_detection_time_ms": object_end_time, f"total_{camera_id}_time_ms": lane_end_time + object_end_time},
+                timestamp = timestamp
+            )
+        
         except Exception as e:
-            self.logger.error("Failed to process image with the enhanced perception system")
-            return self.lane_detector._create_error_output(image)
+            self.logger.error("Failed to process image in the lane detection system")
+            return PerceptionResult(
+                camera_id = camera_id,
+                processed_image = image,  # Return original image on failure
+                detected_objects = None,
+                lane_coords = None,
+                debug_images = None,
+                timing_metrics = {f"total_{camera_id}_time_ms": 0, 'error': True},
+                timestamp = timestamp
+            )
+
         
     def _draw_objects(self, detected_objects, image):
         """Draw the bounding boxes of detected objects"""
