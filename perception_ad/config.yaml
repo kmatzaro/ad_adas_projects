@@ -5,7 +5,7 @@ carla:
   town: "Town03"
   FPS: 30
   validation_mode: False
-  enable_recording: True
+  enable_recording: False
   enable_debugs: False
   enable_traffic: True
 
