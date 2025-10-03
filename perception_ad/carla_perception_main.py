@@ -75,9 +75,11 @@ class CarlaLaneDetection:
         print("Validating configuration...")
         
         # Check required sections exist
-        required_sections = ['carla', 'lane_detector']
+        required_sections = ['carla', 'lane_detector', 'object_detection', 'sensors', 'display_manager']
         if self.validation_mode:
             required_sections.append('validation')
+        if self.enable_traffic:
+            required_sections.append('traffic')
         
         for section in required_sections:
             if section not in self.config:
@@ -179,6 +181,7 @@ class CarlaLaneDetection:
                 
                 # Test connection immediately to catch issues early
                 client_version = self.client.get_client_version()
+                time.sleep(1.0)
                 server_version = self.client.get_server_version()
                 print(f"Connected - Client: {client_version}, Server: {server_version}")
                 
@@ -470,7 +473,7 @@ class CarlaLaneDetection:
         - Ensuring smooth subsequent runs
         - Professional system behavior
         """
-        print("Starting comprehensive cleanup...")
+        print("Starting cleanup...")
         
         # Define cleanup steps in proper order with error isolation
         cleanup_steps = [
@@ -490,15 +493,7 @@ class CarlaLaneDetection:
                 print(f"  WARNING: {step_name} failed: {e}")
                 # Continue cleanup despite individual failures
         
-        # Final validation of cleanup
-        try:
-            if self.world:
-                remaining_actors = len(self.world.get_actors().filter('*'))
-                print(f"  Remaining actors in world: {remaining_actors}")
-        except:
-            pass
-        
-        print("Cleanup completed successfully")
+        print("Cleanup complete")
 
     def _cleanup_carla_settings(self):
         """Restore CARLA to asynchronous mode"""

@@ -6,9 +6,12 @@ perception_ad/perception_data/demo/*_linkedin.gif
 !perception_ad/perception/validation/validation_20250720_124216
 
 carla
+carla_additional_maps
 
 state_estimation
 controller_ad
+
+learning.md
 
 __pycache__
 .pytest_cache
