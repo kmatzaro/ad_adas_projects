@@ -129,10 +129,10 @@ class CarlaLaneDetection:
             self.front_camera.listen(lambda image: self.sensor_manager.camera_callback(image, front_camera_id))
 
             # Rear Camera
-            rear_camera_id = "rear_camera"
-            self.rear_camera = self.sensor_manager.init_sensor("RGBCamera", self.vehicle, rear_camera_id)
-            self.display_manager.add_sensor(rear_camera_id, [0,1])
-            self.rear_camera.listen(lambda image: self.sensor_manager.camera_callback(image, rear_camera_id))
+            # rear_camera_id = "rear_camera"
+            # self.rear_camera = self.sensor_manager.init_sensor("RGBCamera", self.vehicle, rear_camera_id)
+            # self.display_manager.add_sensor(rear_camera_id, [0,1])
+            # self.rear_camera.listen(lambda image: self.sensor_manager.camera_callback(image, rear_camera_id))
 
             # Camera sensors from here on will crash my system on a GTX 1660 Super
             # # Left Camera
@@ -148,9 +148,9 @@ class CarlaLaneDetection:
             # self.right_camera.listen(lambda image: self.sensor_manager.camera_callback(image, right_camera_id))
 
             # LiDAR
-            self.lidar = self.sensor_manager.init_sensor("LiDAR", self.vehicle, "lidar")
-            self.display_manager.add_sensor("lidar", [1,0])
-            self.lidar.listen(lambda data: self.sensor_manager.lidar_callback(data))
+            # self.lidar = self.sensor_manager.init_sensor("LiDAR", self.vehicle, "lidar")
+            # self.display_manager.add_sensor("lidar", [1,0])
+            # self.lidar.listen(lambda data: self.sensor_manager.lidar_callback(data))
 
             # Setup validation after all actors are ready
             if self.validation_mode:

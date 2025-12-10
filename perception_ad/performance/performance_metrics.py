@@ -87,7 +87,7 @@ class PerformanceMonitor:
             real_time_performance = False
 
         return TimingMetrics(
-            average_detection_time = avg_detection_time_ms,
+            average_detection_time = avg_detection_time_ms, # type: ignore
             min_detection_time = min_detection_time,
             max_detection_time = max_detection_time,
             current_fps_est = int(fps_estimate),

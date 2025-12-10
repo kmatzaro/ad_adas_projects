@@ -4,7 +4,7 @@ from actors.actor_utils import cleanup_sensors
 import time
 import numpy as np
 import cv2
-from performance.performace_metrics import PerformanceMonitor
+from performance.performance_metrics import PerformanceMonitor
 
 
 class SensorManager:
@@ -206,7 +206,6 @@ class SensorManager:
         frame = cv2.cvtColor(array[:, :, :3], cv2.COLOR_BGR2RGB)
         
         return frame
-    
     
     def cleanup(self):
         """Cleanup all sensors"""

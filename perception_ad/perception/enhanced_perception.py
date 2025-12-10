@@ -34,7 +34,7 @@ class EnhancedPerception():
         # Store configuration
         self.config = config
 
-        # Initilize lane + object detectors
+        # Initialize lane + object detectors
         self.lane_detector = SimpleLaneDetector(config)
         self.object_detector = ObjectDetector(config)
 

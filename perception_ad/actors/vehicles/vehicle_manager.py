@@ -77,7 +77,7 @@ class VehicleSpawner():
 
 class VehicleManager():
     """
-    This class is responsible for spawning, configuring and destroying vehicle assests in simulation
+    This class is responsible for spawning, configuring and destroying vehicle assets in simulation
     """
     def __init__(self, world):
         self.vehicle_spawner = VehicleSpawner(world)
