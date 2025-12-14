@@ -148,9 +148,9 @@ class CarlaLaneDetection:
             # self.right_camera.listen(lambda image: self.sensor_manager.camera_callback(image, right_camera_id))
 
             # LiDAR
-            # self.lidar = self.sensor_manager.init_sensor("LiDAR", self.vehicle, "lidar")
-            # self.display_manager.add_sensor("lidar", [1,0])
-            # self.lidar.listen(lambda data: self.sensor_manager.lidar_callback(data))
+            self.lidar = self.sensor_manager.init_sensor("LiDAR", self.vehicle, "lidar")
+            self.display_manager.add_sensor("lidar", [0,1])
+            self.lidar.listen(lambda data: self.sensor_manager.lidar_callback(data))
 
             # Setup validation after all actors are ready
             if self.validation_mode:
@@ -188,9 +188,8 @@ class CarlaLaneDetection:
                 # Validate map exists before trying to load it
                 available_maps = self.client.get_available_maps()
                 target_map = self.carla_config['town']
-                target_map_path = "/Game/Carla/Maps/" + target_map
                 
-                if target_map_path not in available_maps:
+                if target_map not in available_maps:
                     print(f"WARNING: Map {target_map} not available, using Town03")
                     target_map = "Town03"
                 

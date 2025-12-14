@@ -10,6 +10,7 @@ carla_additional_maps
 
 state_estimation
 controller_ad
+scenario_runner*
 
 learning.md
 
