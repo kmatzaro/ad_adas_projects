@@ -1,14 +1,13 @@
 import pygame
-import sys, os
-import cv2
+import sys
 import yaml
 import time
 import carla
 from perception.enhanced_perception import EnhancedPerception
 from perception.validation.validation_lane_detection import LaneValidator
-from actors.vehicles.vehicle_manager import VehicleManager, TrafficManager
+from actors.vehicle_manager import VehicleManager, TrafficManager
 from display.display_manager import DisplayManager
-from actors.sensors.sensor_manager import SensorManager
+from actors.sensor_manager import SensorManager
 
 
 class CarlaLaneDetection:
@@ -266,7 +265,7 @@ class CarlaLaneDetection:
         """Setup validation pipeline with error handling"""
         try:
             self.lane_validator = LaneValidator(
-                self.config, self.world, self.camera, self.vehicle, self.perception.lane_detector
+                self.config, self.world, self.front_camera, self.vehicle, self.perception.lane_detector
             )
             print("Validation pipeline initialized")
         except Exception as e:
@@ -476,9 +475,9 @@ class CarlaLaneDetection:
         
         # Define cleanup steps in proper order with error isolation
         cleanup_steps = [
-            ("Sensor cleanup", self.sensor_manager.cleanup),
-            ("Destroying vehicle actors", self.vehicle_manager.cleanup),
-            ("Destroying traffic actors", self.traffic_manager.cleanup),
+            ("Sensor cleanup", self.sensor_manager.cleanup if self.sensor_manager else lambda: None),
+            ("Destroying vehicle actors", self.vehicle_manager.cleanup if self.vehicle_manager else lambda: None),
+            ("Destroying traffic actors", self.traffic_manager.cleanup if self.traffic_manager else lambda: None),
             ("Closing video recording", self.display_manager.cleanup_recording),
             ("Restoring async mode", self._cleanup_carla_settings),
             ("Closing pygame", self.display_manager.cleanup_pygame),
@@ -509,7 +508,7 @@ class CarlaLaneDetection:
 if __name__ == '__main__':
     # Load config with error handling
     try:
-        with open("./config.yaml") as f:
+        with open("./perception_ad/config.yaml") as f:
             cfg = yaml.safe_load(f)
     except FileNotFoundError:
         print("ERROR: config.yaml not found")

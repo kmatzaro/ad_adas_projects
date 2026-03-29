@@ -1,18 +1,18 @@
 perception_ad/*.pt
+*.pt
 
 perception_ad/perception_data/recordings
 perception_ad/perception_data/validation_*
 perception_ad/perception_data/demo/*_linkedin.gif
+perception_ad/control
 !perception_ad/perception/validation/validation_20250720_124216
 
 carla
 carla_additional_maps
 
-state_estimation
-controller_ad
-scenario_runner*
-
-learning.md
+archive
+scenario_runner
+scripts
 
 __pycache__
 .pytest_cache

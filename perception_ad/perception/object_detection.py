@@ -22,6 +22,7 @@ class DetectedObject:
     area: int
     distance_estimate: Optional[float] = None
     relative_position: Literal['left', 'right', 'unknown'] = 'unknown'
+    track_id: Optional[int] = None
 
 class ObjectDetector:
     """
@@ -51,7 +52,7 @@ class ObjectDetector:
         # Set configuration values for YOLO model
         self.model_size = self.config['model_size']
         self.confidence_threshold = self.config['confidence_threshold']
-        self.nms_thershold = self.config['nms_threshold']
+        self.nms_threshold = self.config['nms_threshold']
 
         # Detection classes from COCO dataset
         self.detection_classes = {
@@ -151,7 +152,7 @@ class ObjectDetector:
                 image,
                 classes = list(self.detection_classes.keys()),
                 conf = self.confidence_threshold,
-                iou = self.nms_thershold,
+                iou = self.nms_threshold,
                 verbose = False)
             
             detected_objects = self._extract_detections(results[0])

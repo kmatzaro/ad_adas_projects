@@ -170,7 +170,7 @@ class DisplayManager:
         return self.pygame_display
     
     def get_cell_display_size(self) -> Tuple[int, int]:
-        return [self.cell_width, self.cell_height]
+        return (self.cell_width, self.cell_height)
     
     def get_grid_size(self) -> Tuple[int, int]:
         return self.grid_size

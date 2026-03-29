@@ -82,7 +82,7 @@ sensors:
     iso: 100.0
     gamma: 2.2
     lens_flare_intensity: 0.1
-    sensor_tick: 30 # Value in FPS
+    sensor_tick: 10 # Value in FPS
     shutter_speed: 200.0
   
   left_camera:
@@ -97,7 +97,7 @@ sensors:
     iso: 100.0
     gamma: 2.2
     lens_flare_intensity: 0.1
-    sensor_tick: 30 # Value in FPS
+    sensor_tick: 10 # Value in FPS
     shutter_speed: 200.0
   
   right_camera:
@@ -112,7 +112,7 @@ sensors:
     iso: 100.0
     gamma: 2.2
     lens_flare_intensity: 0.1
-    sensor_tick: 30 # Value in FPS
+    sensor_tick: 10 # Value in FPS
     shutter_speed: 200.0
     
   lidar:
@@ -130,7 +130,7 @@ sensors:
     dropoff_general_rate: 0.45
     dropoff_intensity_limit: 0.8
     dropoff_zero_intensity: 0.4
-    sensor_tick: 30 # Value in FPS
+    sensor_tick: 10 # Value in FPS
     noise_stddev: 0.0
 
 traffic:
@@ -138,6 +138,17 @@ traffic:
 
 display_manager:
   pygame_display: # It's better to match image_resize resolution
-    display_width: 1280 
+    display_width: 1280
     display_height: 720
   grid_size: [1, 2]
+
+object_tracker:
+  iou_threshold: 0.3
+  max_missed_frames: 5
+
+pid_control:
+  pid_gains:
+    Kp: 0.001
+    Ki: 0.0001
+    Kd: 0.0005
+  integral_clamp: 100.0
